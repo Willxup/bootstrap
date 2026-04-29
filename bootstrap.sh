@@ -79,12 +79,14 @@ prompt_input() {
 
     echo -ne "${COLOR_BOLD}  $description${COLOR_RESET}" >&2
     if [[ -n "$default" ]]; then
-        echo -ne "\n  (直接回车使用默认值: $default): " >&2
+        echo -ne "\n  (直接回车使用默认值: $default, 输入 n 跳过): " >&2
     else
-        echo -ne "\n  : " >&2
+        echo -ne "\n  (直接回车跳过): " >&2
     fi
     read -r input < /dev/tty
-    if [[ -z "$input" && -n "$default" ]]; then
+    if [[ "$input" == "n" || "$input" == "N" ]]; then
+        echo ""
+    elif [[ -z "$input" && -n "$default" ]]; then
         echo "$default"
     else
         echo "$input"
@@ -235,7 +237,11 @@ step_04_hostname() {
 
 step_05_ssh_port() {
     local ssh_port
-    ssh_port=$(prompt_input "SSH 端口（非默认 22）" "22")
+    ssh_port=$(prompt_input "SSH 端口（留空跳过）" "22")
+    if [[ -z "$ssh_port" ]]; then
+        warn "未输入 SSH 端口，跳过步骤 05"
+        return 0
+    fi
 
     if ! confirm "修改 SSH 端口为 $ssh_port 并重启 sshd"; then
         warn "跳过步骤 05"
@@ -257,7 +263,11 @@ step_05_ssh_port() {
 
 step_06_ufw() {
     local ufw_ssh_port
-    ufw_ssh_port=$(prompt_input "防火墙允许的 SSH 端口" "22")
+    ufw_ssh_port=$(prompt_input "防火墙允许的 SSH 端口（留空跳过）" "22")
+    if [[ -z "$ufw_ssh_port" ]]; then
+        warn "未输入 SSH 端口，跳过步骤 06"
+        return 0
+    fi
 
     if ! confirm "安装并启用 ufw 防火墙，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp"; then
         warn "跳过步骤 06"
@@ -290,6 +300,10 @@ step_07_ssh_keys() {
 }
 
 step_08_profile() {
+    if is_done "profile"; then
+        warn "Profile 已配置（已完成），跳过"
+        return 0
+    fi
     if ! confirm "配置 /etc/profile（git 提示、PS1、HISTFORMAT、别名）"; then
         warn "跳过步骤 08"
         return 0
@@ -309,7 +323,7 @@ PS1='\[\e[1;32m\][\u@\h \W]\[\e[1;33m\]$(__git_ps1 " (%s)")\[\e[1;32m\]\$ \[\e[0
 HISTFILESIZE=4000
 HISTSIZE=4000
 USER_IP=`who -u am i 2>/dev/null| awk '{print $NF}'|sed -e 's/[()]//g'`
-if [ -z $USER_IP ]; then USER_IP=`hostname`; fi
+if [ -z "$USER_IP" ]; then USER_IP=`hostname`; fi
 HISTTIMEFORMAT="%F %T $USER_IP:`whoami` "
 export HISTTIMEFORMAT
 alias ll='ls -al'
@@ -322,6 +336,10 @@ PROFILE_EOF
 }
 
 step_09_nezha() {
+    if is_done "nezha"; then
+        warn "哪吒探针已安装（已完成），跳过"
+        return 0
+    fi
     local nezha_server nezha_secret nezha_tls
     nezha_server=$(prompt_input "哪吒探针服务器地址（格式 host:port，留空跳过）" "")
     if [[ -z "$nezha_server" ]]; then
@@ -353,6 +371,10 @@ step_09_nezha() {
 }
 
 step_10_bbr() {
+    if is_done "bbr"; then
+        warn "BBR 已配置（已完成），跳过"
+        return 0
+    fi
     if ! confirm "开启 BBR 和 FQ 拥塞控制算法"; then
         warn "跳过步骤 10"
         return 0
@@ -376,6 +398,10 @@ step_10_bbr() {
 }
 
 step_11_ipv6() {
+    if is_done "ipv6"; then
+        warn "IPv6 已禁用（已完成），跳过"
+        return 0
+    fi
     if ! confirm "禁用 IPv6"; then
         warn "跳过步骤 11"
         return 0
@@ -410,9 +436,23 @@ step_12_nodequality() {
 }
 
 step_13_swap_zram() {
-    local swap_size zram_percent zram_algo
-    swap_size=$(prompt_input "Swap 文件大小（如 1G，留空跳过 swap）" "")
-    zram_percent=$(prompt_input "ZRam 占物理内存百分比（如 25，留空跳过 zram）" "")
+    if is_done "swap_zram"; then
+        warn "Swap & ZRam 已配置（已完成），跳过"
+        return 0
+    fi
+    local swap_size zram_percent zram_algo choice
+    choice=$(prompt_input "配置模式（1=仅Swap, 2=Swap+ZRam）" "2")
+
+    if [[ -z "$choice" ]]; then
+        warn "跳过步骤 13"
+        return 0
+    elif [[ "$choice" == "1" ]]; then
+        swap_size=$(prompt_input "Swap 文件大小（如 1G，留空跳过）" "1G")
+        zram_percent=""
+    else
+        swap_size=$(prompt_input "Swap 文件大小（如 1G，留空跳过）" "")
+        zram_percent=$(prompt_input "ZRam 占物理内存百分比（留空跳过）" "25")
+    fi
 
     if [[ -z "$swap_size" && -z "$zram_percent" ]]; then
         warn "未配置 Swap 和 ZRam，跳过步骤 13"
@@ -423,7 +463,10 @@ step_13_swap_zram() {
         zram_algo=$(prompt_input "ZRam 压缩算法（lz4/lzo/zstd）" "lz4")
     fi
 
-    if ! confirm "配置 Swap ($swap_size) 和 ZRam (${zram_percent}%)"; then
+    local desc=""
+    [[ -n "$swap_size" ]] && desc="Swap ($swap_size)"
+    [[ -n "$zram_percent" && "$zram_percent" != "0" ]] && desc="${desc:+$desc + }ZRam (${zram_percent}%)"
+    if ! confirm "配置 $desc"; then
         warn "跳过步骤 13"
         return 0
     fi
@@ -434,7 +477,15 @@ step_13_swap_zram() {
         swapoff /swapfile 2>/dev/null || true
         rm -f /swapfile
         if ! fallocate -l "$swap_size" /swapfile 2>/dev/null; then
-            dd if=/dev/zero of=/swapfile bs=1M count=1024 2>/dev/null || true
+            local count_mb
+            if [[ "$swap_size" =~ ^([0-9]+)[gG]$ ]]; then
+                count_mb=$(( ${BASH_REMATCH[1]} * 1024 ))
+            elif [[ "$swap_size" =~ ^([0-9]+)[mM]$ ]]; then
+                count_mb=${BASH_REMATCH[1]}
+            else
+                count_mb=1024
+            fi
+            dd if=/dev/zero of=/swapfile bs=1M count="$count_mb" 2>/dev/null || true
         fi
         chmod 600 /swapfile
         mkswap /swapfile
@@ -475,6 +526,10 @@ EOF
 }
 
 step_14_crowdsec() {
+    if is_done "crowdsec"; then
+        warn "CrowdSec 已安装（已完成），跳过"
+        return 0
+    fi
     if ! confirm "安装 CrowdSec 防护（包含 ufw 日志、rsyslog、nginx-proxy-manager、sshd 规则）"; then
         warn "跳过步骤 14"
         return 0
@@ -485,8 +540,9 @@ step_14_crowdsec() {
     run_cmd "安装 rsyslog" apt install -y rsyslog
     systemctl enable rsyslog --now
 
-    run_cmd "添加 crowdsec 安装源" curl -s https://install.crowdsec.net | sh
-    run_cmd "安装 crowdsec" apt update && apt install -y crowdsec
+    run_cmd "添加 crowdsec 安装源" bash -c "curl -s https://install.crowdsec.net | sh"
+    run_cmd "更新 apt" apt update
+    run_cmd "安装 crowdsec" apt install -y crowdsec
     run_cmd "安装 iptables bouncer" apt install -y crowdsec-firewall-bouncer-iptables
 
     cscli hub update
@@ -503,10 +559,16 @@ step_14_crowdsec() {
 }
 
 step_15_docker() {
+    if is_done "docker"; then
+        warn "Docker 已安装（已完成），跳过"
+        return 0
+    fi
     local compose_version
-    compose_version=$(prompt_input "Docker Compose 版本" "v5.1.1")
+    compose_version=$(prompt_input "Docker Compose 版本（留空跳过）" "v5.1.1")
+    local desc="Docker"
+    [[ -n "$compose_version" ]] && desc="Docker + Docker Compose ($compose_version)"
 
-    if ! confirm "安装 Docker 和 Docker Compose ($compose_version)"; then
+    if ! confirm "安装 $desc"; then
         warn "跳过步骤 15"
         return 0
     fi
@@ -530,17 +592,23 @@ EOF
 
     systemctl restart docker
 
-    run_cmd "下载 docker-compose" curl -L \
-        "https://github.com/docker/compose/releases/download/$compose_version/docker-compose-linux-x86_64" \
-        -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-    docker-compose --version
+    if [[ -n "$compose_version" ]]; then
+        run_cmd "下载 docker-compose" curl -L \
+            "https://github.com/docker/compose/releases/download/$compose_version/docker-compose-linux-x86_64" \
+            -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+        docker-compose --version
+    fi
 
     success "Docker 安装完成"
     mark_done "docker"
 }
 
 step_16_vim() {
+    if is_done "vim"; then
+        warn "Vim 配置已完成，跳过"
+        return 0
+    fi
     if ! confirm "配置 ~/.vimrc"; then
         warn "跳过步骤 16"
         return 0
@@ -554,25 +622,41 @@ step_16_vim() {
 
     tee -a "$HOME/.vimrc" << 'VIM_EOF'
 " -- bootstrap vimrc --
-syntax on
-set number
-set cursorline
-set showmatch
-set wildmenu
-set wrap
-set tabstop=2
-set shiftwidth=2
-set expandtab
-set autoindent
-set smartindent
-set hlsearch
-set incsearch
-set ignorecase
-set smartcase
-set encoding=utf-8
-set mouse=a
-set clipboard=unnamed
-set history=1000
+" ==========================================
+" 1. 基础与显示设置 (UI & Display)
+" ==========================================
+syntax on             " 开启语法高亮
+set number            " 显示绝对行号
+" set relativenumber    " 显示相对行号（结合 set number 使用，光标所在行显示绝对行号，其他行显示相对行号，非常方便上下移动）
+set cursorline        " 突出显示当前光标所在行
+set showmatch         " 光标遇到括号时，自动高亮对应的另一半括号
+set wildmenu          " 在底部命令模式下，开启命令自动补全的视觉提示
+set wrap            " 不自动折行（如果单行太长，超出屏幕也不折行显示）
+
+" ==========================================
+" 2. 缩进与 Tab 设置 (Indentation & Tabs)
+" ==========================================
+set tabstop=2         " 按下 Tab 键时，Vim 显示的空格数
+set shiftwidth=2      " 自动缩进时，每一级缩进的空格数
+set expandtab         " 将 Tab 键自动转换成空格（写 Python 或前端等极力推荐开启）
+set autoindent        " 开启自动缩进（新行会自动对齐上一行的缩进）
+set smartindent       " 智能缩进（针对 C/C++ 等类似语法，识别大括号等自动调整缩进）
+
+" ==========================================
+" 3. 搜索设置 (Search)
+" ==========================================
+set hlsearch          " 搜索时高亮显示所有匹配的结果
+set incsearch         " 边输入边搜索（输入搜索词的过程中，光标会实时跳到匹配的位置）
+set ignorecase        " 搜索时忽略大小写
+set smartcase         " 智能大小写（如果搜索词全小写，则忽略大小写；如果包含大写字母，则精确匹配大小写）
+
+" ==========================================
+" 4. 其他实用设置 (Misc)
+" ==========================================
+set encoding=utf-8    " 设置内部编码为 UTF-8，防止中文乱码
+set mouse=a           " 开启鼠标支持（可以用鼠标点击定位光标、滚动滚轮）
+set clipboard=unnamed " 共享系统剪贴板（可以直接使用 y 复制内容到系统剪贴板，用 p 粘贴系统剪贴板的内容）
+set history=1000      " 增加历史记录（保留更多的冒号命令和搜索历史）
 " -- bootstrap vimrc end --
 VIM_EOF
 
