@@ -1,66 +1,97 @@
 # Bootstrap
 
-服务器初始化脚本，一键完成新服务器的标准化配置。
+Bootstrap 服务器初始化脚本，用来把一台新的 Debian/Ubuntu 服务器快速整理成自己常用的基础环境。
 
-## 功能特性
+脚本会按步骤询问确认，默认不会静默乱改系统；执行前可以先 dry-run 预览。它适合个人自用，也方便开源保存，但运行前请确认你了解 SSH 端口、防火墙、Docker、CrowdSec 等步骤的影响。
 
-- **交互式执行**：每步操作均需确认（y/n），可随时中断
-- **幂等设计**：已执行过的步骤会自动跳过，不会重复配置
-- **全交互配置**：所有敏感值在运行时提示输入，不保存到文件
-- **参数支持**：支持 `--all`（全自动）、`--dry-run`（预览）、`--verbose`（详细输出）
+## 会做什么
 
-## 包含步骤
+| 步骤 | 内容 | 说明 |
+|---|---|---|
+| 01 | 更新系统 | 更新 apt 索引并升级已安装软件包 |
+| 02 | 安装基础工具 | vim、htop、net-tools、unzip、curl、wget |
+| 03 | 修改 root 密码 | 交互式执行 `passwd` |
+| 04 | 修改主机名 | 默认 `server-01` |
+| 05 | 修改 SSH 端口 | 默认 `2222`，会先验证 SSH 配置再重启服务 |
+| 06 | 启用 UFW | 开放 SSH 端口、80、443 |
+| 07 | 添加 SSH 公钥 | 追加到当前用户的 `authorized_keys`，会自动去重 |
+| 08 | 配置 shell profile | PS1、git 状态提示、history 格式、`ll` 别名 |
+| 09 | 安装哪吒探针 | 默认 server 为 `monitor.example.com:5555`，密钥运行时输入 |
+| 10 | 开启 BBR + FQ | 写入 sysctl 配置并立即应用 |
+| 11 | 禁用 IPv6 | 可选步骤 |
+| 12 | 运行 NodeQuality | 可选测试步骤，会下载并运行测试脚本 |
+| 13 | 配置 Swap + ZRam | 默认 1G swap、25% ZRam、lz4 |
+| 14 | 安装 CrowdSec | 包含 UFW 日志、rsyslog、iptables bouncer、常用 collections |
+| 15 | 安装 Docker | 安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转 |
+| 16 | 配置 Vim | 写入常用 Vim 设置 |
 
-| 步骤 | 描述 |
-|------|------|
-| 01 | 更新 apt 并升级系统 |
-| 02 | 安装必要软件（vim、htop、net-tools 等） |
-| 03 | 修改 root 密码 |
-| 04 | 修改主机名 |
-| 05 | 修改 SSH 端口 |
-| 06 | 安装并启用 UFW 防火墙 |
-| 07 | 添加 SSH 公钥 |
-| 08 | 配置 Profile（PS1、HISTFORMAT、别名） |
-| 09 | 安装哪吒探针 |
-| 10 | 开启 BBR & FQ 拥塞控制 |
-| 11 | 禁用 IPv6 |
-| 12 | 运行 NodeQuality 延迟测试 |
-| 13 | 配置 Swap 和 ZRam |
-| 14 | 安装 CrowdSec 防护 |
-| 15 | 安装 Docker 和 Docker Compose |
-| 16 | 配置 Vim |
-
-## 使用方法
-
-### 1. 下载脚本
+## 快速使用
 
 ```bash
 curl -LO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
 chmod +x bootstrap.sh
-```
-
-### 2. 执行脚本
-
-```bash
 sudo ./bootstrap.sh
 ```
 
-脚本会依次提示输入配置值（SSH 端口、主机名、哪吒探针等），每步执行前也会确认。
+建议首次运行时一步步确认。脚本执行过程中需要你准备：
 
-### 命令行参数
+- SSH 新端口，默认 `2222`
+- SSH 公钥
+- 哪吒探针客户端密钥
+- 是否禁用 IPv6、是否运行 NodeQuality
+
+## 常用参数
 
 | 参数 | 说明 |
-|------|------|
-| `--all` | 跳过所有确认，自动执行全部步骤 |
-| `--dry-run` | 预览模式，只打印将要执行的操作 |
-| `--verbose` | 详细输出，显示每条命令的输出 |
-| `-h` | 显示帮助信息 |
+|---|---|
+| `--dry-run` | 只预览将要执行的动作，不需要 root，不修改系统 |
+| `--yes` / `--all` | 跳过确认，使用默认值；需要敏感输入的步骤会安全跳过 |
+| `--only 05,06` | 只运行指定步骤 |
+| `--skip 09,12` | 跳过指定步骤 |
+| `--verbose` | 显示命令输出，方便排查问题 |
+| `--config FILE` | 从配置文件读取默认值 |
 
-## 注意事项
+示例：
 
-- 脚本必须以 root 权限运行
-- 步骤 05（修改 SSH 端口）和步骤 06（启用防火墙）建议按顺序执行，避免 SSH 连接断开
-- 哪吒探针密钥需要从探针面板获取
+```bash
+./bootstrap.sh --dry-run
+sudo ./bootstrap.sh --only 05,06
+sudo ./bootstrap.sh --skip 11,12
+```
+
+## 配置文件
+
+如果你经常初始化服务器，可以把常用值放到一个本地配置文件里，然后用 `--config` 读取。配置文件只支持简单的 `BOOTSTRAP_变量=值`，不要写 shell 命令，也不要提交到 GitHub。
+
+常用变量：
+
+```bash
+BOOTSTRAP_HOSTNAME=server-01
+BOOTSTRAP_SSH_PORT=2222
+BOOTSTRAP_OLD_SSH_PORT=22
+BOOTSTRAP_KEEP_OLD_SSH_PORT=false
+BOOTSTRAP_NEZHA_SERVER=monitor.example.com:5555
+BOOTSTRAP_NEZHA_TLS=false
+BOOTSTRAP_NEZHA_SECRET=
+BOOTSTRAP_SSH_PUBLIC_KEY=
+BOOTSTRAP_SSH_PUBLIC_KEY_FILE=
+BOOTSTRAP_SWAP_SIZE=1G
+BOOTSTRAP_ZRAM_PERCENT=25
+BOOTSTRAP_ZRAM_ALGO=lz4
+```
+
+## 安全提醒
+
+- 改 SSH 端口前，建议先确认控制台/VNC/救援模式可用。
+- 脚本会先验证 SSH 配置，再重启 SSH 服务，降低锁机风险。
+- UFW 默认只开放新 SSH 端口、80、443；如果你想临时保留旧 SSH 端口，可以在配置文件中设置 `BOOTSTRAP_KEEP_OLD_SSH_PORT=true`。
+- `--config` 不会执行配置文件里的命令；如果格式不对或变量名写错，脚本会直接报错。
+- Docker 会操作 iptables，发布容器端口时可能绕过普通 UFW 规则；有严格防火墙需求时请额外检查 Docker 的 `DOCKER-USER` 链。
+- 哪吒探针和 NodeQuality 仍需要下载外部脚本。脚本已经避免直接 `curl | bash`，但运行前仍应确认来源可信。
+
+## 回滚
+
+脚本会在修改关键配置前备份到 `/var/backups/bootstrap/`。如果 SSH、profile、sysctl、Docker 等配置出问题，可以从这个目录找对应备份文件恢复。
 
 ## License
 

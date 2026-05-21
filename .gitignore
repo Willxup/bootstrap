@@ -1,2 +1,13 @@
 bootstrap.log
 .DS_Store
+.env
+.env.*
+*.local
+*.local.*
+*.pem
+*.key
+*.p12
+*.pfx
+bootstrap.conf
+bootstrap.local.conf
+.claude/
