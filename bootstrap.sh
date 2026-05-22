@@ -8,6 +8,7 @@ set -uo pipefail
 
 SCRIPT_VERSION="2.0.0"
 BACKUP_DIR="/var/backups/bootstrap"
+MAX_STEP=17
 AUTO_YES=0
 DRY_RUN=0
 VERBOSE=0
@@ -94,6 +95,7 @@ parse_args() {
 
 set_defaults() {
     : "${BOOTSTRAP_HOSTNAME:=server-01}"
+    : "${BOOTSTRAP_TIMEZONE:=UTC}"
     : "${BOOTSTRAP_SSH_PORT:=2222}"
     : "${BOOTSTRAP_OLD_SSH_PORT:=22}"
     : "${BOOTSTRAP_KEEP_OLD_SSH_PORT:=false}"
@@ -128,6 +130,7 @@ strip_optional_quotes() {
 is_allowed_config_key() {
     case "$1" in
         BOOTSTRAP_HOSTNAME | \
+            BOOTSTRAP_TIMEZONE | \
             BOOTSTRAP_SSH_PORT | \
             BOOTSTRAP_OLD_SSH_PORT | \
             BOOTSTRAP_KEEP_OLD_SSH_PORT | \
@@ -370,6 +373,46 @@ validate_host_port() {
     [[ "$value" =~ ^[^[:space:]:]+:[0-9]+$ ]] && validate_port "${value##*:}"
 }
 
+validate_timezone() {
+    local timezone="$1"
+    [[ -n "$timezone" ]] || return 1
+    [[ "$timezone" != /* && "$timezone" != *..* ]] || return 1
+    [[ "$timezone" =~ ^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$ ]] || return 1
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        return 0
+    fi
+    if command -v timedatectl >/dev/null 2>&1; then
+        timedatectl list-timezones 2>/dev/null | grep -Fx "$timezone" >/dev/null 2>&1 && return 0
+    fi
+    [[ -f "/usr/share/zoneinfo/$timezone" ]]
+}
+
+package_is_installed() {
+    local package="$1"
+    local status
+    command -v dpkg-query >/dev/null 2>&1 || return 1
+    status="$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)"
+    [[ "$status" == "install ok installed" ]]
+}
+
+installed_external_time_sync_packages() {
+    local package installed=""
+    local -a packages=(
+        chrony
+        ntpsec
+        openntpd
+        ntp
+    )
+
+    for package in "${packages[@]}"; do
+        if package_is_installed "$package"; then
+            installed="${installed:+$installed, }$package"
+        fi
+    done
+    printf "%s" "$installed"
+}
+
 ensure_dir() {
     local dir="$1"
     local mode="${2:-0755}"
@@ -443,8 +486,10 @@ contains_step() {
 validate_step_list() {
     local option_name="$1"
     local list="$2"
+    local max_step_padded
     local item number
     local -a items
+    printf -v max_step_padded "%02d" "$MAX_STEP"
     [[ -z "$list" ]] && return 0
     IFS=',' read -r -a items <<<"$list"
     for item in "${items[@]}"; do
@@ -458,8 +503,8 @@ validate_step_list() {
             exit 1
         fi
         number=$((10#$item))
-        if ((number < 1 || number > 16)); then
-            error "$option_name 只能指定 01-16 之间的步骤: $item"
+        if ((number < 1 || number > MAX_STEP)); then
+            error "$option_name 只能指定 01-${max_step_padded} 之间的步骤: $item"
             exit 1
         fi
     done
@@ -677,6 +722,63 @@ step_04_hostname() {
     fi
     backup_file /etc/hostname >/dev/null || return 1
     run_cmd "设置主机名" hostnamectl set-hostname "$new_hostname" || return 1
+}
+
+timesyncd_config_for_timezone() {
+    local timezone="$1"
+    if [[ "$timezone" == "UTC" ]]; then
+        cat <<'TIMESYNCD_CHINA_EOF'
+[Time]
+NTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org
+FallbackNTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org
+TIMESYNCD_CHINA_EOF
+    else
+        cat <<'TIMESYNCD_GLOBAL_EOF'
+[Time]
+NTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org 3.debian.pool.ntp.org
+FallbackNTP=0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org
+TIMESYNCD_GLOBAL_EOF
+    fi
+}
+
+step_17_timesync() {
+    local timezone content ntp_source_label installed_time_sync
+    installed_time_sync="$(installed_external_time_sync_packages)"
+    if [[ -n "$installed_time_sync" ]]; then
+        warn "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置"
+        return 0
+    fi
+
+    timezone="$(prompt_input "系统时区" "$BOOTSTRAP_TIMEZONE")"
+    if [[ -z "$timezone" ]]; then
+        warn "未输入时区，跳过步骤 17"
+        return 0
+    fi
+    if ! validate_timezone "$timezone"; then
+        error "时区不合法或系统不支持: $timezone"
+        return 1
+    fi
+
+    if [[ "$timezone" == "UTC" ]]; then
+        ntp_source_label="Debian/NTP Pool，Fallback 使用 Debian Pool"
+    else
+        ntp_source_label="Debian Pool，Fallback 使用 NTP Pool"
+    fi
+
+    if ! confirm "配置时区为 ${timezone}，启用 systemd-timesyncd（${ntp_source_label}）"; then
+        warn "跳过步骤 17"
+        return 0
+    fi
+
+    content="$(timesyncd_config_for_timezone "$timezone")"
+    apt_install systemd-timesyncd || return 1
+    backup_file /etc/systemd/timesyncd.conf.d/60-ntp.conf >/dev/null || return 1
+    write_file /etc/systemd/timesyncd.conf.d/60-ntp.conf 0644 "$content" || return 1
+    run_cmd "设置系统时区" timedatectl set-timezone "$timezone" || return 1
+    run_cmd "启用 systemd-timesyncd" systemctl enable --now systemd-timesyncd || return 1
+    run_cmd "开启 systemd NTP 同步" timedatectl set-ntp true || return 1
+    run_cmd "重启 systemd-timesyncd" systemctl restart systemd-timesyncd || return 1
+    run_cmd "显示时间同步状态" timedatectl timesync-status || true
 }
 
 step_05_ssh_port() {
@@ -1413,6 +1515,7 @@ main() {
     run_step "14" "安装 CrowdSec" step_14_crowdsec
     run_step "15" "安装 Docker" step_15_docker
     run_step "16" "配置 Vim" step_16_vim
+    run_step "17" "配置时间同步" step_17_timesync
 
     echo -e "\n${COLOR_SUCCESS}${COLOR_BOLD}========================================${COLOR_RESET}" >&2
     echo -e "${COLOR_SUCCESS}${COLOR_BOLD}  所有步骤执行完毕！${COLOR_RESET}" >&2

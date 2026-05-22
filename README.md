@@ -24,6 +24,7 @@ Bootstrap 服务器初始化脚本，用来把一台新的 Debian/Ubuntu 服务�
 | 14 | 安装 CrowdSec | 包含 UFW 日志、rsyslog、iptables bouncer、常用 collections |
 | 15 | 安装 Docker | 安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转 |
 | 16 | 配置 Vim | 写入常用 Vim 设置 |
+| 17 | 配置时间同步 | 未安装其他时间同步服务时，设置时区并启用 `systemd-timesyncd`，写入 `60-ntp.conf` |
 
 ## 快速使用
 
@@ -36,6 +37,7 @@ sudo ./bootstrap.sh
 建议首次运行时一步步确认。脚本执行过程中需要你准备：
 
 - SSH 新端口，默认 `2222`
+- 系统时区，默认 `UTC`
 - SSH 公钥
 - 哪吒探针客户端密钥
 - 是否禁用 IPv6、是否运行 NodeQuality
@@ -56,6 +58,7 @@ sudo ./bootstrap.sh
 ```bash
 ./bootstrap.sh --dry-run
 sudo ./bootstrap.sh --only 05,06
+sudo ./bootstrap.sh --only 17
 sudo ./bootstrap.sh --skip 11,12
 ```
 
@@ -67,6 +70,7 @@ sudo ./bootstrap.sh --skip 11,12
 
 ```bash
 BOOTSTRAP_HOSTNAME=server-01
+BOOTSTRAP_TIMEZONE=UTC
 BOOTSTRAP_SSH_PORT=2222
 BOOTSTRAP_OLD_SSH_PORT=22
 BOOTSTRAP_KEEP_OLD_SSH_PORT=false
@@ -87,6 +91,8 @@ BOOTSTRAP_ZRAM_ALGO=lz4
 - UFW 默认只开放新 SSH 端口、80、443；如果你想临时保留旧 SSH 端口，可以在配置文件中设置 `BOOTSTRAP_KEEP_OLD_SSH_PORT=true`。
 - `--config` 不会执行配置文件里的命令；如果格式不对或变量名写错，脚本会直接报错。
 - Docker 会操作 iptables，发布容器端口时可能绕过普通 UFW 规则；有严格防火墙需求时请额外检查 Docker 的 `DOCKER-USER` 链。
+- 时间同步步骤会先检查 `chrony`、`ntpsec`、`openntpd`、`ntp`；如果已安装其中之一，会默认跳过，不替换现有时间同步方案。
+- 时间同步步骤默认使用 `UTC`，并配置Debian/NTP Pool；如果改成其他时区，则使用 Debian/NTP Pool 的国际时间源。
 - 哪吒探针和 NodeQuality 仍需要下载外部脚本。脚本已经避免直接 `curl | bash`，但运行前仍应确认来源可信。
 
 ## 回滚
