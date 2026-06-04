@@ -1,13 +1,19 @@
 bootstrap.log
 .DS_Store
+
+# Local bootstrap config may contain private hostnames, ports, keys, or secrets.
 .env
 .env.*
 *.local
 *.local.*
+*.local.env
+bootstrap.env
+bootstrap.conf
+bootstrap.local.conf
+
 *.pem
 *.key
 *.p12
 *.pfx
-bootstrap.conf
-bootstrap.local.conf
+
 .claude/

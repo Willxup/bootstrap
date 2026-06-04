@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Bootstrap server bootstrap
+# Server bootstrap
 # Usage: sudo ./bootstrap.sh [--yes|--all] [--dry-run] [--verbose]
 # =============================================================================
 
@@ -94,12 +94,12 @@ parse_args() {
 }
 
 set_defaults() {
-    : "${BOOTSTRAP_HOSTNAME:=server-01}"
+    : "${BOOTSTRAP_HOSTNAME:=}"
     : "${BOOTSTRAP_TIMEZONE:=UTC}"
-    : "${BOOTSTRAP_SSH_PORT:=2222}"
+    : "${BOOTSTRAP_SSH_PORT:=}"
     : "${BOOTSTRAP_OLD_SSH_PORT:=22}"
     : "${BOOTSTRAP_KEEP_OLD_SSH_PORT:=false}"
-    : "${BOOTSTRAP_NEZHA_SERVER:=monitor.example.com:5555}"
+    : "${BOOTSTRAP_NEZHA_SERVER:=}"
     : "${BOOTSTRAP_NEZHA_TLS:=false}"
     : "${BOOTSTRAP_SWAP_SIZE:=1G}"
     : "${BOOTSTRAP_ZRAM_PERCENT:=25}"
@@ -227,7 +227,7 @@ echo_banner() {
 ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝
 
 EOF
-    echo "              Bootstrap 服务器初始化脚本 v${SCRIPT_VERSION}"
+    echo "              通用服务器初始化脚本 v${SCRIPT_VERSION}"
 }
 
 quote_cmd() {
@@ -725,24 +725,15 @@ step_04_hostname() {
 }
 
 timesyncd_config_for_timezone() {
-    local timezone="$1"
-    if [[ "$timezone" == "UTC" ]]; then
-        cat <<'TIMESYNCD_CHINA_EOF'
-[Time]
-NTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org
-FallbackNTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org
-TIMESYNCD_CHINA_EOF
-    else
-        cat <<'TIMESYNCD_GLOBAL_EOF'
+    cat <<'TIMESYNCD_GLOBAL_EOF'
 [Time]
 NTP=0.debian.pool.ntp.org 1.debian.pool.ntp.org 2.debian.pool.ntp.org 3.debian.pool.ntp.org
 FallbackNTP=0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org
 TIMESYNCD_GLOBAL_EOF
-    fi
 }
 
 step_17_timesync() {
-    local timezone content ntp_source_label installed_time_sync
+    local timezone content installed_time_sync
     installed_time_sync="$(installed_external_time_sync_packages)"
     if [[ -n "$installed_time_sync" ]]; then
         warn "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置"
@@ -759,13 +750,7 @@ step_17_timesync() {
         return 1
     fi
 
-    if [[ "$timezone" == "UTC" ]]; then
-        ntp_source_label="Debian/NTP Pool，Fallback 使用 Debian Pool"
-    else
-        ntp_source_label="Debian Pool，Fallback 使用 NTP Pool"
-    fi
-
-    if ! confirm "配置时区为 ${timezone}，启用 systemd-timesyncd（${ntp_source_label}）"; then
+    if ! confirm "配置时区为 ${timezone}，启用 systemd-timesyncd（Debian/NTP Pool）"; then
         warn "跳过步骤 17"
         return 0
     fi
@@ -978,9 +963,7 @@ __bootstrap_git_ps1() {
 PS1='\[\e[1;32m\][\u@\h \W]\[\e[1;33m\]$(__bootstrap_git_ps1)\[\e[1;32m\]\$ \[\e[0m\]'
 HISTFILESIZE=4000
 HISTSIZE=4000
-USER_IP=$(who -u am i 2>/dev/null | awk '{print $NF}' | sed -e 's/[()]//g')
-if [ -z "$USER_IP" ]; then USER_IP=$(hostname); fi
-HISTTIMEFORMAT="%F %T $USER_IP:$(whoami) "
+HISTTIMEFORMAT="%F %T "
 export HISTTIMEFORMAT
 alias ll='ls -al'
 # -- bootstrap 配置 end --
