@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Server bootstrap
-# Usage: sudo ./bootstrap.sh [--yes|--all] [--dry-run] [--verbose]
+# Usage: sudo ./bootstrap.sh [--config FILE] [--yes] [--resume]
 # =============================================================================
 
-set -uo pipefail
+set -Euo pipefail
 
-SCRIPT_VERSION="2.0.0"
+SCRIPT_VERSION="3.0.0"
 BACKUP_DIR="/var/backups/bootstrap"
+DEFAULT_STATE_FILE="/var/lib/bootstrap/state"
+DEFAULT_LOG_FILE="/var/log/bootstrap/bootstrap.log"
 MAX_STEP=17
 AUTO_YES=0
 DRY_RUN=0
@@ -15,6 +17,34 @@ VERBOSE=0
 CONFIG_FILE=""
 ONLY_STEPS=""
 SKIP_STEPS=""
+ONLY_STEPS_SET=0
+SKIP_STEPS_SET=0
+RESUME=0
+RESET_STATE=0
+SHOW_STATUS=0
+LIST_STEPS=0
+STATE_FILE="$DEFAULT_STATE_FILE"
+LOG_FILE="$DEFAULT_LOG_FILE"
+STATE_ENABLED=0
+LOG_READY=0
+RUN_STATUS=""
+RUN_FINGERPRINT=""
+STATE_FINGERPRINT=""
+STATE_SCRIPT_VERSION=""
+STATE_ONLY_STEPS=""
+STATE_SKIP_STEPS=""
+STATE_LOG_FILE=""
+RUN_STARTED_AT=""
+COMPLETED_STEPS=""
+CURRENT_STEP=""
+FAILED_STEP=""
+
+CLI_HOSTNAME=""
+CLI_TIMEZONE=""
+CLI_SSH_PORT=""
+CLI_NETWORK_PROFILE=""
+CLI_SWAP_SIZE=""
+CLI_ZRAM_PERCENT=""
 
 COLOR_INFO='\033[1;36m'
 COLOR_SUCCESS='\033[1;32m'
@@ -33,14 +63,35 @@ usage() {
 用法: sudo ./bootstrap.sh [选项]
 
 选项:
-  --yes, --all        跳过确认，按默认值执行；缺少敏感输入时会安全跳过对应步骤
-  --dry-run           预览模式，不要求 root，不改系统，只显示将要做什么
-  --verbose           显示命令输出
-  --only 05,06        只执行指定步骤
-  --skip 12,14        跳过指定步骤
-  --config FILE       从配置文件读取默认值
-  -h, --help          显示此帮助信息
+  --config FILE             读取配置文件
+  --yes, --all              非交互执行；缺少必要输入的步骤会安全跳过
+  --dry-run                 只预览，不要求 root、不写状态
+  --resume                  从上次失败或中断的位置继续
+  --status                  查看检查点状态
+  --reset-state             忽略未完成的旧检查点并开始新一轮
+  --state-file FILE         检查点路径（默认 /var/lib/bootstrap/state）
+  --log-file FILE           日志路径（默认 /var/log/bootstrap/bootstrap.log）
+  --only 05,06              只执行指定步骤
+  --skip 12,14              跳过指定步骤
+  --hostname NAME           覆盖配置中的主机名
+  --timezone ZONE           覆盖配置中的时区
+  --ssh-port PORT           覆盖配置中的 SSH 端口
+  --network-profile PROFILE minimal / standard / low-memory
+  --swap-size SIZE          覆盖 Swap 大小，例如 2G；none 表示不配置
+  --zram-percent PERCENT    覆盖 ZRam 百分比
+  --verbose                 同时在终端显示完整命令输出
+  --list-steps              列出步骤
+  -h, --help                显示帮助
 EOF
+}
+
+require_option_value() {
+    local option="$1"
+    local value="${2:-}"
+    if [[ -z "$value" || "$value" == --* ]]; then
+        error "$option 需要一个值"
+        exit 1
+    fi
 }
 
 parse_args() {
@@ -52,32 +103,77 @@ parse_args() {
             --dry-run)
                 DRY_RUN=1
                 ;;
+            --resume)
+                RESUME=1
+                ;;
+            --status)
+                SHOW_STATUS=1
+                ;;
+            --reset-state)
+                RESET_STATE=1
+                ;;
             --verbose)
                 VERBOSE=1
                 ;;
+            --list-steps)
+                LIST_STEPS=1
+                ;;
             --only)
                 shift
-                if [[ $# -eq 0 || "${1:-}" == --* ]]; then
-                    error "--only 需要指定步骤，例如: --only 05,06"
-                    exit 1
-                fi
+                require_option_value "--only" "${1:-}"
                 ONLY_STEPS="${1:-}"
+                ONLY_STEPS_SET=1
                 ;;
             --skip)
                 shift
-                if [[ $# -eq 0 || "${1:-}" == --* ]]; then
-                    error "--skip 需要指定步骤，例如: --skip 12,14"
-                    exit 1
-                fi
+                require_option_value "--skip" "${1:-}"
                 SKIP_STEPS="${1:-}"
+                SKIP_STEPS_SET=1
                 ;;
             --config)
                 shift
-                if [[ $# -eq 0 || "${1:-}" == --* ]]; then
-                    error "--config 需要指定配置文件路径"
-                    exit 1
-                fi
+                require_option_value "--config" "${1:-}"
                 CONFIG_FILE="${1:-}"
+                ;;
+            --state-file)
+                shift
+                require_option_value "--state-file" "${1:-}"
+                STATE_FILE="${1:-}"
+                ;;
+            --log-file)
+                shift
+                require_option_value "--log-file" "${1:-}"
+                LOG_FILE="${1:-}"
+                ;;
+            --hostname)
+                shift
+                require_option_value "--hostname" "${1:-}"
+                CLI_HOSTNAME="${1:-}"
+                ;;
+            --timezone)
+                shift
+                require_option_value "--timezone" "${1:-}"
+                CLI_TIMEZONE="${1:-}"
+                ;;
+            --ssh-port)
+                shift
+                require_option_value "--ssh-port" "${1:-}"
+                CLI_SSH_PORT="${1:-}"
+                ;;
+            --network-profile)
+                shift
+                require_option_value "--network-profile" "${1:-}"
+                CLI_NETWORK_PROFILE="${1:-}"
+                ;;
+            --swap-size)
+                shift
+                require_option_value "--swap-size" "${1:-}"
+                CLI_SWAP_SIZE="${1:-}"
+                ;;
+            --zram-percent)
+                shift
+                require_option_value "--zram-percent" "${1:-}"
+                CLI_ZRAM_PERCENT="${1:-}"
                 ;;
             -h | --help)
                 usage
@@ -101,11 +197,37 @@ set_defaults() {
     : "${BOOTSTRAP_KEEP_OLD_SSH_PORT:=false}"
     : "${BOOTSTRAP_NEZHA_SERVER:=}"
     : "${BOOTSTRAP_NEZHA_TLS:=false}"
+    : "${BOOTSTRAP_NEZHA_SECRET:=}"
+    : "${BOOTSTRAP_SSH_PUBLIC_KEY:=}"
+    : "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:=}"
     : "${BOOTSTRAP_SWAP_SIZE:=1G}"
     : "${BOOTSTRAP_ZRAM_PERCENT:=25}"
     : "${BOOTSTRAP_ZRAM_ALGO:=lz4}"
+    : "${BOOTSTRAP_SWAP_PRIORITY:=10}"
+    : "${BOOTSTRAP_ZRAM_PRIORITY:=100}"
+    : "${BOOTSTRAP_SWAPPINESS:=40}"
+    : "${BOOTSTRAP_VFS_CACHE_PRESSURE:=100}"
+    : "${BOOTSTRAP_NETWORK_PROFILE:=minimal}"
+    : "${BOOTSTRAP_ONLY_STEPS:=}"
+    : "${BOOTSTRAP_SKIP_STEPS:=}"
     : "${BOOTSTRAP_NODEQUALITY_URL:=https://run.NodeQuality.com}"
     : "${BOOTSTRAP_NEZHA_INSTALLER_URL:=https://raw.githubusercontent.com/nezhahq/scripts/main/agent/install.sh}"
+}
+
+apply_cli_overrides() {
+    [[ -n "$CLI_HOSTNAME" ]] && BOOTSTRAP_HOSTNAME="$CLI_HOSTNAME"
+    [[ -n "$CLI_TIMEZONE" ]] && BOOTSTRAP_TIMEZONE="$CLI_TIMEZONE"
+    [[ -n "$CLI_SSH_PORT" ]] && BOOTSTRAP_SSH_PORT="$CLI_SSH_PORT"
+    [[ -n "$CLI_NETWORK_PROFILE" ]] && BOOTSTRAP_NETWORK_PROFILE="$CLI_NETWORK_PROFILE"
+    [[ -n "$CLI_SWAP_SIZE" ]] && BOOTSTRAP_SWAP_SIZE="$CLI_SWAP_SIZE"
+    [[ -n "$CLI_ZRAM_PERCENT" ]] && BOOTSTRAP_ZRAM_PERCENT="$CLI_ZRAM_PERCENT"
+
+    if [[ "$ONLY_STEPS_SET" -eq 0 ]]; then
+        ONLY_STEPS="$BOOTSTRAP_ONLY_STEPS"
+    fi
+    if [[ "$SKIP_STEPS_SET" -eq 0 ]]; then
+        SKIP_STEPS="$BOOTSTRAP_SKIP_STEPS"
+    fi
 }
 
 trim() {
@@ -143,7 +265,14 @@ is_allowed_config_key() {
             BOOTSTRAP_SSH_PUBLIC_KEY_FILE | \
             BOOTSTRAP_SWAP_SIZE | \
             BOOTSTRAP_ZRAM_PERCENT | \
-            BOOTSTRAP_ZRAM_ALGO)
+            BOOTSTRAP_ZRAM_ALGO | \
+            BOOTSTRAP_SWAP_PRIORITY | \
+            BOOTSTRAP_ZRAM_PRIORITY | \
+            BOOTSTRAP_SWAPPINESS | \
+            BOOTSTRAP_VFS_CACHE_PRESSURE | \
+            BOOTSTRAP_NETWORK_PROFILE | \
+            BOOTSTRAP_ONLY_STEPS | \
+            BOOTSTRAP_SKIP_STEPS)
             return 0
             ;;
         *)
@@ -240,30 +369,87 @@ quote_cmd() {
     echo "${quoted% }"
 }
 
+timestamp_utc() {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+log_event() {
+    [[ "$LOG_READY" -eq 1 ]] || return 0
+    printf "[%s] %s\n" "$(timestamp_utc)" "$*" >>"$LOG_FILE"
+}
+
+setup_log() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        return 0
+    fi
+    ensure_dir "$(dirname "$LOG_FILE")" 0755 || return 1
+    touch "$LOG_FILE" || return 1
+    chmod 0600 "$LOG_FILE" || return 1
+    LOG_READY=1
+    {
+        printf "\n[%s] ===== bootstrap v%s 开始 =====\n" "$(timestamp_utc)" "$SCRIPT_VERSION"
+        printf "state_file=%s\n" "$STATE_FILE"
+    } >>"$LOG_FILE"
+}
+
+show_command_failure() {
+    local description="$1"
+    local status="$2"
+    error "${description} 失败（退出码 ${status}）"
+    if [[ "$LOG_READY" -eq 1 ]]; then
+        warn "完整输出: $LOG_FILE"
+        if [[ "$VERBOSE" -eq 0 ]]; then
+            echo "----- 最近日志 -----" >&2
+            tail -n 12 "$LOG_FILE" >&2 || true
+            echo "--------------------" >&2
+        fi
+    fi
+}
+
 run_cmd() {
     local description="$1"
+    local ret
     shift
     info "$description..."
     if [[ "$DRY_RUN" -eq 1 ]]; then
         info "[dry-run] $(quote_cmd "$@")"
         return 0
     fi
+    log_event "RUN $description: $(quote_cmd "$@")"
     if [[ "$VERBOSE" -eq 1 ]]; then
-        "$@"
+        "$@" 2>&1 | tee -a "$LOG_FILE"
+        ret=${PIPESTATUS[0]}
     else
-        "$@" >/dev/null 2>&1
+        "$@" >>"$LOG_FILE" 2>&1
+        ret=$?
     fi
+    if [[ "$ret" -ne 0 ]]; then
+        log_event "FAIL ($ret) $description"
+        show_command_failure "$description" "$ret"
+        return "$ret"
+    fi
+    log_event "OK $description"
+    return 0
 }
 
 run_interactive_cmd() {
     local description="$1"
+    local ret
     shift
     info "$description..."
     if [[ "$DRY_RUN" -eq 1 ]]; then
         info "[dry-run] $(quote_cmd "$@")"
         return 0
     fi
+    log_event "RUN interactive $description"
     "$@"
+    ret=$?
+    if [[ "$ret" -ne 0 ]]; then
+        log_event "FAIL ($ret) $description"
+        error "${description} 失败（退出码 ${ret}）"
+        return "$ret"
+    fi
+    log_event "OK $description"
 }
 
 confirm() {
@@ -340,7 +526,11 @@ prompt_secret() {
 
 validate_port() {
     local port="$1"
-    [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1 && port <= 65535))
+    local number
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    ((${#port} <= 5)) || return 1
+    number=$((10#$port))
+    ((number >= 1 && number <= 65535))
 }
 
 validate_hostname() {
@@ -355,17 +545,43 @@ validate_bool() {
 
 validate_swap_size() {
     local value="$1"
-    [[ "$value" =~ ^[1-9][0-9]*[mMgG]$ ]]
+    [[ "$value" == "none" ]] && return 0
+    [[ "$value" =~ ^[1-9][0-9]*[mMgG]$ ]] && ((${#value} <= 8))
 }
 
 validate_percent() {
     local value="$1"
-    [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 100))
+    local number
+    [[ "$value" =~ ^[0-9]+$ ]] || return 1
+    ((${#value} <= 3)) || return 1
+    number=$((10#$value))
+    ((number >= 0 && number <= 100))
 }
 
 validate_zram_algo() {
     local value="$1"
     [[ "$value" == "lz4" || "$value" == "lzo" || "$value" == "zstd" ]]
+}
+
+validate_integer_range() {
+    local value="$1"
+    local minimum="$2"
+    local maximum="$3"
+    local number
+    [[ "$value" =~ ^[0-9]+$ ]] || return 1
+    ((${#value} <= 10)) || return 1
+    number=$((10#$value))
+    ((number >= minimum && number <= maximum))
+}
+
+validate_network_profile() {
+    local value="$1"
+    [[ "$value" == "minimal" || "$value" == "standard" || "$value" == "low-memory" ]]
+}
+
+validate_absolute_path() {
+    local value="$1"
+    [[ "$value" == /* && "$value" != *$'\n'* && "$value" != *$'\r'* ]]
 }
 
 validate_host_port() {
@@ -386,6 +602,97 @@ validate_timezone() {
         timedatectl list-timezones 2>/dev/null | grep -Fx "$timezone" >/dev/null 2>&1 && return 0
     fi
     [[ -f "/usr/share/zoneinfo/$timezone" ]]
+}
+
+validate_runtime_options() {
+    if [[ "$RESUME" -eq 1 && "$RESET_STATE" -eq 1 ]]; then
+        error "--resume 与 --reset-state 不能同时使用"
+        exit 1
+    fi
+    if [[ "$DRY_RUN" -eq 1 && "$RESUME" -eq 1 ]]; then
+        error "--dry-run 不读取续跑状态；请移除 --resume"
+        exit 1
+    fi
+    if [[ "$DRY_RUN" -eq 1 && "$RESET_STATE" -eq 1 ]]; then
+        error "--dry-run 不写状态；请移除 --reset-state"
+        exit 1
+    fi
+    if [[ "$SHOW_STATUS" -eq 1 && ( "$RESUME" -eq 1 || "$RESET_STATE" -eq 1 || "$DRY_RUN" -eq 1 ) ]]; then
+        error "--status 不能与 --resume、--reset-state 或 --dry-run 同时使用"
+        exit 1
+    fi
+    if ! validate_absolute_path "$STATE_FILE"; then
+        error "--state-file 必须是无换行的绝对路径: $STATE_FILE"
+        exit 1
+    fi
+    if ! validate_absolute_path "$LOG_FILE"; then
+        error "--log-file 必须是无换行的绝对路径: $LOG_FILE"
+        exit 1
+    fi
+}
+
+validate_config_values() {
+    if [[ -n "$BOOTSTRAP_HOSTNAME" ]] && ! validate_hostname "$BOOTSTRAP_HOSTNAME"; then
+        error "BOOTSTRAP_HOSTNAME 不合法: $BOOTSTRAP_HOSTNAME"
+        exit 1
+    fi
+    if ! validate_timezone "$BOOTSTRAP_TIMEZONE"; then
+        error "BOOTSTRAP_TIMEZONE 不合法或系统不支持: $BOOTSTRAP_TIMEZONE"
+        exit 1
+    fi
+    if [[ -n "$BOOTSTRAP_SSH_PORT" ]] && ! validate_port "$BOOTSTRAP_SSH_PORT"; then
+        error "BOOTSTRAP_SSH_PORT 不合法: $BOOTSTRAP_SSH_PORT"
+        exit 1
+    fi
+    if ! validate_port "$BOOTSTRAP_OLD_SSH_PORT"; then
+        error "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT"
+        exit 1
+    fi
+    if ! validate_bool "$BOOTSTRAP_KEEP_OLD_SSH_PORT" || ! validate_bool "$BOOTSTRAP_NEZHA_TLS"; then
+        error "BOOTSTRAP_KEEP_OLD_SSH_PORT 和 BOOTSTRAP_NEZHA_TLS 只能是 true 或 false"
+        exit 1
+    fi
+    if [[ -n "$BOOTSTRAP_NEZHA_SERVER" ]] && ! validate_host_port "$BOOTSTRAP_NEZHA_SERVER"; then
+        error "BOOTSTRAP_NEZHA_SERVER 必须使用 host:port 格式"
+        exit 1
+    fi
+    if ! validate_swap_size "$BOOTSTRAP_SWAP_SIZE"; then
+        error "BOOTSTRAP_SWAP_SIZE 必须是 1G、512M 这类大小，或 none"
+        exit 1
+    fi
+    if ! validate_percent "$BOOTSTRAP_ZRAM_PERCENT"; then
+        error "BOOTSTRAP_ZRAM_PERCENT 必须是 0-100 的整数"
+        exit 1
+    fi
+    if ! validate_zram_algo "$BOOTSTRAP_ZRAM_ALGO"; then
+        error "BOOTSTRAP_ZRAM_ALGO 仅支持 lz4、lzo、zstd"
+        exit 1
+    fi
+    if ! validate_integer_range "$BOOTSTRAP_SWAP_PRIORITY" 0 32767 || \
+        ! validate_integer_range "$BOOTSTRAP_ZRAM_PRIORITY" 0 32767; then
+        error "Swap/ZRam 优先级必须是 0-32767 的整数"
+        exit 1
+    fi
+    if ! validate_integer_range "$BOOTSTRAP_SWAPPINESS" 0 200; then
+        error "BOOTSTRAP_SWAPPINESS 必须是 0-200 的整数"
+        exit 1
+    fi
+    if ! validate_integer_range "$BOOTSTRAP_VFS_CACHE_PRESSURE" 0 1000; then
+        error "BOOTSTRAP_VFS_CACHE_PRESSURE 必须是 0-1000 的整数"
+        exit 1
+    fi
+    if ! validate_network_profile "$BOOTSTRAP_NETWORK_PROFILE"; then
+        error "BOOTSTRAP_NETWORK_PROFILE 仅支持 minimal、standard、low-memory"
+        exit 1
+    fi
+    if [[ -n "${BOOTSTRAP_SSH_PUBLIC_KEY:-}" && -n "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}" ]]; then
+        error "BOOTSTRAP_SSH_PUBLIC_KEY 与 BOOTSTRAP_SSH_PUBLIC_KEY_FILE 只能设置一个"
+        exit 1
+    fi
+    if [[ -n "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}" && ! -r "$BOOTSTRAP_SSH_PUBLIC_KEY_FILE" ]]; then
+        error "SSH 公钥文件不可读: $BOOTSTRAP_SSH_PUBLIC_KEY_FILE"
+        exit 1
+    fi
 }
 
 package_is_installed() {
@@ -430,13 +737,13 @@ backup_file() {
         echo ""
         return 0
     fi
-    backup="$BACKUP_DIR/$(basename "$file").$(date +%Y%m%d-%H%M%S).$$"
+    backup="$BACKUP_DIR/$(basename "$file").$(date +%Y%m%d-%H%M%S).$$.$RANDOM"
     if [[ "$DRY_RUN" -eq 1 ]]; then
         info "[dry-run] 备份 $file 到 $backup"
         echo "$backup"
         return 0
     fi
-    install -d -m 0755 "$BACKUP_DIR" || return 1
+    install -d -m 0700 "$BACKUP_DIR" || return 1
     cp -a "$file" "$backup" || return 1
     echo "$backup"
 }
@@ -446,11 +753,11 @@ restore_file_from_backup() {
     local backup="$2"
     if [[ -n "$backup" && -f "$backup" ]]; then
         cp -a "$backup" "$target" && return 0
-        warn "无法从备份恢复 $target，请手动检查: $backup"
+        warn "无法从备份恢复 ${target}，请手动检查: $backup"
         return 1
     else
         rm -f "$target" && return 0
-        warn "无法移除 $target，请手动检查"
+        warn "无法移除 ${target}，请手动检查"
         return 1
     fi
 }
@@ -474,7 +781,8 @@ contains_step() {
     local list="$1"
     local step="$2"
     local item
-    local -a items
+    local -a items=()
+    [[ -z "$list" ]] && return 1
     IFS=',' read -r -a items <<<"$list"
     for item in "${items[@]}"; do
         item="${item//[[:space:]]/}"
@@ -526,6 +834,279 @@ should_run_step() {
     return 0
 }
 
+step_name() {
+    case "$1" in
+        01) echo "更新系统" ;;
+        02) echo "安装基础工具" ;;
+        03) echo "修改 root 密码" ;;
+        04) echo "修改主机名" ;;
+        05) echo "修改 SSH 端口" ;;
+        06) echo "启用 UFW 防火墙" ;;
+        07) echo "添加 SSH 公钥" ;;
+        08) echo "配置 Profile" ;;
+        09) echo "安装哪吒探针" ;;
+        10) echo "配置网络参数" ;;
+        11) echo "禁用 IPv6" ;;
+        12) echo "运行 NodeQuality" ;;
+        13) echo "配置 Swap 与 ZRam" ;;
+        14) echo "安装 CrowdSec" ;;
+        15) echo "安装 Docker" ;;
+        16) echo "配置 Vim" ;;
+        17) echo "配置时间同步" ;;
+        *) echo "未知步骤" ;;
+    esac
+}
+
+list_steps() {
+    local number=1 step
+    while ((number <= MAX_STEP)); do
+        printf -v step "%02d" "$number"
+        printf "%s  %s\n" "$step" "$(step_name "$step")"
+        number=$((number + 1))
+    done
+}
+
+hash_stdin() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | awk '{print $1}'
+    else
+        error "缺少 sha256sum 或 shasum，无法生成续跑配置指纹"
+        return 1
+    fi
+}
+
+file_fingerprint() {
+    local path="$1"
+    if [[ -z "$path" ]]; then
+        echo ""
+    elif [[ -r "$path" ]]; then
+        hash_stdin <"$path"
+    else
+        echo "unreadable"
+    fi
+}
+
+configuration_fingerprint() {
+    local public_key_file_hash
+    public_key_file_hash="$(file_fingerprint "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}")" || return 1
+    {
+        printf "script_version=%s\n" "$SCRIPT_VERSION"
+        printf "only=%s\n" "$ONLY_STEPS"
+        printf "skip=%s\n" "$SKIP_STEPS"
+        printf "hostname=%s\n" "$BOOTSTRAP_HOSTNAME"
+        printf "timezone=%s\n" "$BOOTSTRAP_TIMEZONE"
+        printf "ssh_port=%s\n" "$BOOTSTRAP_SSH_PORT"
+        printf "old_ssh_port=%s\n" "$BOOTSTRAP_OLD_SSH_PORT"
+        printf "keep_old_ssh_port=%s\n" "$BOOTSTRAP_KEEP_OLD_SSH_PORT"
+        printf "nezha_server=%s\n" "$BOOTSTRAP_NEZHA_SERVER"
+        printf "nezha_tls=%s\n" "$BOOTSTRAP_NEZHA_TLS"
+        printf "nezha_secret=%s\n" "${BOOTSTRAP_NEZHA_SECRET:-}"
+        printf "nezha_installer=%s\n" "$BOOTSTRAP_NEZHA_INSTALLER_URL"
+        printf "nodequality_url=%s\n" "$BOOTSTRAP_NODEQUALITY_URL"
+        printf "ssh_public_key=%s\n" "${BOOTSTRAP_SSH_PUBLIC_KEY:-}"
+        printf "ssh_public_key_file=%s\n" "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}"
+        printf "ssh_public_key_file_hash=%s\n" "$public_key_file_hash"
+        printf "swap_size=%s\n" "$BOOTSTRAP_SWAP_SIZE"
+        printf "zram_percent=%s\n" "$BOOTSTRAP_ZRAM_PERCENT"
+        printf "zram_algo=%s\n" "$BOOTSTRAP_ZRAM_ALGO"
+        printf "swap_priority=%s\n" "$BOOTSTRAP_SWAP_PRIORITY"
+        printf "zram_priority=%s\n" "$BOOTSTRAP_ZRAM_PRIORITY"
+        printf "swappiness=%s\n" "$BOOTSTRAP_SWAPPINESS"
+        printf "vfs_cache_pressure=%s\n" "$BOOTSTRAP_VFS_CACHE_PRESSURE"
+        printf "network_profile=%s\n" "$BOOTSTRAP_NETWORK_PROFILE"
+    } | hash_stdin
+}
+
+write_state() {
+    local tmp
+    [[ "$STATE_ENABLED" -eq 1 ]] || return 0
+    ensure_dir "$(dirname "$STATE_FILE")" 0755 || return 1
+    tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")" || return 1
+    {
+        printf "STATE_VERSION=1\n"
+        printf "SCRIPT_VERSION=%s\n" "$SCRIPT_VERSION"
+        printf "FINGERPRINT=%s\n" "$RUN_FINGERPRINT"
+        printf "STARTED_AT=%s\n" "$RUN_STARTED_AT"
+        printf "UPDATED_AT=%s\n" "$(timestamp_utc)"
+        printf "STATUS=%s\n" "$RUN_STATUS"
+        printf "ONLY_STEPS=%s\n" "$ONLY_STEPS"
+        printf "SKIP_STEPS=%s\n" "$SKIP_STEPS"
+        printf "COMPLETED_STEPS=%s\n" "$COMPLETED_STEPS"
+        printf "CURRENT_STEP=%s\n" "$CURRENT_STEP"
+        printf "FAILED_STEP=%s\n" "$FAILED_STEP"
+        printf "LOG_FILE=%s\n" "$LOG_FILE"
+    } >"$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chmod 0600 "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv "$tmp" "$STATE_FILE"
+}
+
+load_state() {
+    local key value state_version="" stored_log_file=""
+    [[ -r "$STATE_FILE" ]] || {
+        error "没有可读取的检查点: $STATE_FILE"
+        return 1
+    }
+
+    STATE_FINGERPRINT=""
+    STATE_SCRIPT_VERSION=""
+    STATE_ONLY_STEPS=""
+    STATE_SKIP_STEPS=""
+    RUN_STARTED_AT=""
+    RUN_STATUS=""
+    COMPLETED_STEPS=""
+    CURRENT_STEP=""
+    FAILED_STEP=""
+
+    while IFS='=' read -r key value || [[ -n "$key" ]]; do
+        case "$key" in
+            STATE_VERSION) state_version="$value" ;;
+            SCRIPT_VERSION) STATE_SCRIPT_VERSION="$value" ;;
+            FINGERPRINT) STATE_FINGERPRINT="$value" ;;
+            STARTED_AT) RUN_STARTED_AT="$value" ;;
+            STATUS) RUN_STATUS="$value" ;;
+            ONLY_STEPS) STATE_ONLY_STEPS="$value" ;;
+            SKIP_STEPS) STATE_SKIP_STEPS="$value" ;;
+            COMPLETED_STEPS) COMPLETED_STEPS="$value" ;;
+            CURRENT_STEP) CURRENT_STEP="$value" ;;
+            FAILED_STEP) FAILED_STEP="$value" ;;
+            LOG_FILE) stored_log_file="$value" ;;
+        esac
+    done <"$STATE_FILE"
+
+    if [[ "$state_version" != "1" || ! "$STATE_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
+        error "检查点格式无效: $STATE_FILE"
+        return 1
+    fi
+    STATE_LOG_FILE="$stored_log_file"
+    return 0
+}
+
+initialize_state() {
+    RUN_STARTED_AT="$(timestamp_utc)"
+    RUN_STATUS="running"
+    COMPLETED_STEPS=""
+    CURRENT_STEP=""
+    FAILED_STEP=""
+    STATE_ONLY_STEPS="$ONLY_STEPS"
+    STATE_SKIP_STEPS="$SKIP_STEPS"
+    STATE_ENABLED=1
+    write_state
+}
+
+prepare_state() {
+    local current_fingerprint previous_status
+    current_fingerprint="$(configuration_fingerprint)" || return 1
+
+    if [[ "$RESUME" -eq 1 ]]; then
+        load_state || return 1
+        if [[ "$STATE_FINGERPRINT" != "$current_fingerprint" ]]; then
+            warn "当前配置或脚本版本与检查点不同"
+            warn "已完成步骤仍会跳过；新配置只影响失败和待执行步骤，原步骤选择保持不变"
+        fi
+        ONLY_STEPS="$STATE_ONLY_STEPS"
+        SKIP_STEPS="$STATE_SKIP_STEPS"
+        RUN_FINGERPRINT="$(configuration_fingerprint)" || return 1
+        STATE_ENABLED=1
+        if [[ "$RUN_STATUS" == "complete" ]]; then
+            success "检查点显示本轮已经完成，无需续跑"
+            return 2
+        fi
+        RUN_STATUS="running"
+        CURRENT_STEP=""
+        FAILED_STEP=""
+        write_state || return 1
+        return 0
+    fi
+
+    if [[ -e "$STATE_FILE" && "$RESET_STATE" -eq 0 ]]; then
+        if load_state; then
+            previous_status="$RUN_STATUS"
+            if [[ "$previous_status" != "complete" ]]; then
+                error "发现未完成的检查点（状态: ${previous_status}）"
+                warn "继续执行请加 --resume；放弃旧进度请加 --reset-state"
+                return 1
+            fi
+        else
+            warn "旧检查点损坏；请确认后使用 --reset-state 覆盖"
+            return 1
+        fi
+    fi
+
+    RUN_FINGERPRINT="$current_fingerprint"
+    initialize_state
+}
+
+print_state_status() {
+    local number=1 step label
+    load_state || return 1
+    printf "状态: %s\n" "$RUN_STATUS"
+    printf "脚本: %s\n" "$STATE_SCRIPT_VERSION"
+    printf "开始: %s\n" "$RUN_STARTED_AT"
+    printf "日志: %s\n" "${STATE_LOG_FILE:-$LOG_FILE}"
+    while ((number <= MAX_STEP)); do
+        printf -v step "%02d" "$number"
+        if contains_step "$COMPLETED_STEPS" "$step"; then
+            label="完成"
+        elif [[ "$step" == "$FAILED_STEP" && "$RUN_STATUS" == "interrupted" ]]; then
+            label="中断"
+        elif [[ "$step" == "$FAILED_STEP" ]]; then
+            label="失败"
+        elif [[ "$step" == "$CURRENT_STEP" ]]; then
+            label="中断"
+        elif [[ -n "$STATE_ONLY_STEPS" ]] && ! contains_step "$STATE_ONLY_STEPS" "$step"; then
+            label="未选择"
+        elif contains_step "$STATE_SKIP_STEPS" "$step"; then
+            label="已排除"
+        else
+            label="待执行"
+        fi
+        printf "%s  %-6s  %s\n" "$step" "$label" "$(step_name "$step")"
+        number=$((number + 1))
+    done
+}
+
+add_completed_step() {
+    local step="$1"
+    if ! contains_step "$COMPLETED_STEPS" "$step"; then
+        COMPLETED_STEPS="${COMPLETED_STEPS:+$COMPLETED_STEPS,}$step"
+    fi
+}
+
+handle_signal() {
+    local signal_name="$1"
+    local exit_code="$2"
+    warn "收到 ${signal_name}，已保留检查点"
+    if [[ "$STATE_ENABLED" -eq 1 ]]; then
+        RUN_STATUS="interrupted"
+        FAILED_STEP="$CURRENT_STEP"
+        write_state || true
+    fi
+    exit "$exit_code"
+}
+
+handle_exit() {
+    local exit_code="$1"
+    if [[ "$exit_code" -ne 0 && "$STATE_ENABLED" -eq 1 && "$RUN_STATUS" == "running" ]]; then
+        RUN_STATUS="failed"
+        FAILED_STEP="$CURRENT_STEP"
+        write_state || true
+    fi
+}
+
+install_state_traps() {
+    trap 'handle_signal INT 130' INT
+    trap 'handle_signal TERM 143' TERM
+    trap 'handle_exit $?' EXIT
+}
+
 run_step() {
     local step_num="$1"
     local step_name="$2"
@@ -537,17 +1118,43 @@ run_step() {
         return 0
     fi
 
+    if [[ "$RESUME" -eq 1 ]] && contains_step "$COMPLETED_STEPS" "$step_num"; then
+        success "步骤 ${step_num} 已完成，续跑时跳过: ${step_name}"
+        return 0
+    fi
+
     echo "" >&2
     echo -e "${COLOR_BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${COLOR_RESET}" >&2
     echo -e "${COLOR_BOLD}  步骤 ${step_num}: ${step_name}${COLOR_RESET}" >&2
     echo -e "${COLOR_BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${COLOR_RESET}" >&2
 
+    CURRENT_STEP="$step_num"
+    FAILED_STEP=""
+    RUN_STATUS="running"
+    write_state || {
+        error "无法写入检查点，停止执行"
+        exit 1
+    }
+    log_event "STEP $step_num START $step_name"
+
     "$step_func"
     ret=$?
     if [[ $ret -eq 0 ]]; then
+        add_completed_step "$step_num"
+        CURRENT_STEP=""
+        write_state || {
+            error "步骤成功但无法更新检查点，停止执行"
+            exit 1
+        }
+        log_event "STEP $step_num OK $step_name"
         success "步骤 ${step_num} 完成"
     else
+        RUN_STATUS="failed"
+        FAILED_STEP="$step_num"
+        write_state || true
+        log_event "STEP $step_num FAIL ($ret) $step_name"
         error "步骤 ${step_num} 执行失败"
+        warn "修复问题后使用相同参数加 --resume 继续"
         exit "$ret"
     fi
 }
@@ -1021,26 +1628,75 @@ step_09_nezha() {
     [[ $ret -eq 0 ]] || return "$ret"
 }
 
+network_profile_content() {
+    case "$1" in
+        minimal)
+            cat <<'NETWORK_MINIMAL_EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+NETWORK_MINIMAL_EOF
+            ;;
+        standard)
+            cat <<'NETWORK_STANDARD_EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.core.rmem_default = 262144
+net.core.wmem_default = 524288
+net.core.rmem_max = 33554432
+net.core.wmem_max = 33554432
+net.ipv4.tcp_rmem = 4096 87380 33554432
+net.ipv4.tcp_wmem = 4096 65536 33554432
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+net.core.netdev_max_backlog = 2500
+NETWORK_STANDARD_EOF
+            ;;
+        low-memory)
+            cat <<'NETWORK_LOW_MEMORY_EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.core.rmem_default = 262144
+net.core.wmem_default = 262144
+net.core.rmem_max = 8388608
+net.core.wmem_max = 8388608
+net.ipv4.tcp_rmem = 4096 87380 8388608
+net.ipv4.tcp_wmem = 4096 65536 8388608
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+net.core.netdev_max_backlog = 1000
+NETWORK_LOW_MEMORY_EOF
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 step_10_bbr() {
-    local content
-    if ! confirm "开启 BBR 和 FQ 拥塞控制算法"; then
+    local content current_cc current_qdisc modules_content
+    if ! confirm "应用 ${BOOTSTRAP_NETWORK_PROFILE} 网络参数（BBR + FQ）"; then
         warn "跳过步骤 10"
         return 0
     fi
-    content=$(cat <<'BBR_EOF'
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-BBR_EOF
-)
+    content="$(network_profile_content "$BOOTSTRAP_NETWORK_PROFILE")" || return 1
+    modules_content=$'tcp_bbr\nsch_fq'
     backup_file /etc/sysctl.d/99-bootstrap-bbr.conf >/dev/null || return 1
+    backup_file /etc/modules-load.d/99-bootstrap-network.conf >/dev/null || return 1
     write_file /etc/sysctl.d/99-bootstrap-bbr.conf 0644 "$content" || return 1
-    run_cmd "应用 sysctl 配置" sysctl --system || return 1
+    write_file /etc/modules-load.d/99-bootstrap-network.conf 0644 "$modules_content" || return 1
+    if [[ "$DRY_RUN" -ne 1 ]] && command -v modprobe >/dev/null 2>&1; then
+        modprobe tcp_bbr >>"$LOG_FILE" 2>&1 || true
+        modprobe sch_fq >>"$LOG_FILE" 2>&1 || true
+    fi
+    run_cmd "应用网络 sysctl 配置" sysctl --load=/etc/sysctl.d/99-bootstrap-bbr.conf || return 1
     if [[ "$DRY_RUN" -ne 1 ]]; then
-        if sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null | grep -qx "bbr"; then
-            success "BBR 已启用"
-        else
-            warn "BBR 可能未启用，当前内核可能不支持"
+        current_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
+        current_qdisc="$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
+        if [[ "$current_cc" != "bbr" || "$current_qdisc" != "fq" ]]; then
+            error "网络参数验证失败：congestion_control=${current_cc:-unknown}, qdisc=${current_qdisc:-unknown}"
+            return 1
         fi
+        success "网络配置已生效：profile=${BOOTSTRAP_NETWORK_PROFILE}, BBR + FQ"
     fi
 }
 
@@ -1058,7 +1714,7 @@ IPV6_EOF
 )
     backup_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf >/dev/null || return 1
     write_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf 0644 "$content" || return 1
-    run_cmd "应用 IPv6 sysctl 配置" sysctl --system || return 1
+    run_cmd "应用 IPv6 sysctl 配置" sysctl --load=/etc/sysctl.d/99-bootstrap-disable-ipv6.conf || return 1
 }
 
 step_12_nodequality() {
@@ -1096,14 +1752,69 @@ swap_size_to_mb() {
     fi
 }
 
+swap_size_to_bytes() {
+    local value="$1"
+    local mb
+    mb="$(swap_size_to_mb "$value")" || return 1
+    echo $((mb * 1024 * 1024))
+}
+
+ensure_swap_fstab_entry() {
+    local priority="$1"
+    local desired="/swapfile none swap sw,pri=${priority} 0 0"
+    local count backup tmp
+
+    count="$(awk '$1 == "/swapfile" { count++ } END { print count + 0 }' /etc/fstab 2>/dev/null || echo 0)"
+    if [[ "$count" == "1" ]] && grep -Fxq "$desired" /etc/fstab; then
+        return 0
+    fi
+
+    backup="$(backup_file /etc/fstab)" || return 1
+    tmp="$(mktemp)" || return 1
+    awk '$1 != "/swapfile" { print }' /etc/fstab >"$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    printf "%s\n" "$desired" >>"$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    if ! install -m 0644 "$tmp" /etc/fstab; then
+        rm -f "$tmp"
+        restore_file_from_backup /etc/fstab "$backup"
+        return 1
+    fi
+    rm -f "$tmp"
+}
+
 configure_swapfile() {
     local swap_size="$1"
+    local priority="$2"
     local tmp_swap="/swapfile.bootstrap.$$"
     local old_swap_backup=""
-    local count_mb fstab_backup
+    local count_mb target_bytes current_bytes current_priority old_was_active=0
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 创建 $swap_size /swapfile，写入 /etc/fstab"
+        info "[dry-run] 确保 $swap_size /swapfile（priority=${priority}）并写入 /etc/fstab"
+        return 0
+    fi
+
+    target_bytes="$(swap_size_to_bytes "$swap_size")" || return 1
+    current_bytes="$(stat -c %s /swapfile 2>/dev/null || echo 0)"
+    if [[ "$current_bytes" == "$target_bytes" ]]; then
+        current_priority="$(awk '$1 == "/swapfile" { print $5 }' /proc/swaps 2>/dev/null || true)"
+        if [[ -z "$current_priority" ]]; then
+            run_cmd "启用现有 swapfile" swapon -p "$priority" /swapfile || return 1
+        elif [[ "$current_priority" != "$priority" ]]; then
+            run_cmd "停用 swapfile 以更新优先级" swapoff /swapfile || return 1
+            if ! run_cmd "按优先级 $priority 重新启用 swapfile" swapon -p "$priority" /swapfile; then
+                warn "新优先级启用失败，尝试恢复优先级 $current_priority"
+                swapon -p "$current_priority" /swapfile >>"$LOG_FILE" 2>&1 || true
+                return 1
+            fi
+        fi
+        ensure_swap_fstab_entry "$priority" || return 1
+        info "现有 /swapfile 大小正确，已复用"
         return 0
     fi
 
@@ -1125,13 +1836,14 @@ configure_swapfile() {
     }
 
     if grep -q '^/swapfile[[:space:]]' /proc/swaps 2>/dev/null; then
+        old_was_active=1
         swapoff /swapfile || {
             rm -f "$tmp_swap"
             return 1
         }
     fi
     if [[ -e /swapfile ]]; then
-        old_swap_backup="/swapfile.bak.$(date +%Y%m%d-%H%M%S)"
+        old_swap_backup="/swapfile.bak.$(date +%Y%m%d-%H%M%S).$$"
         mv /swapfile "$old_swap_backup" || {
             rm -f "$tmp_swap"
             return 1
@@ -1140,26 +1852,65 @@ configure_swapfile() {
     if ! mv "$tmp_swap" /swapfile; then
         if [[ -n "$old_swap_backup" && -e "$old_swap_backup" ]]; then
             mv "$old_swap_backup" /swapfile
-            swapon /swapfile 2>/dev/null || true
+            [[ "$old_was_active" -eq 1 ]] && swapon /swapfile 2>/dev/null || true
         fi
         return 1
     fi
-    if ! swapon /swapfile; then
+    if ! swapon -p "$priority" /swapfile; then
         warn "新 swapfile 启用失败，尝试恢复旧文件"
         swapoff /swapfile 2>/dev/null || true
         rm -f /swapfile
         if [[ -n "$old_swap_backup" && -e "$old_swap_backup" ]]; then
             mv "$old_swap_backup" /swapfile
-            swapon /swapfile 2>/dev/null || true
+            [[ "$old_was_active" -eq 1 ]] && swapon /swapfile 2>/dev/null || true
         fi
         return 1
     fi
 
-    fstab_backup="$(backup_file /etc/fstab)" || return 1
-    if ! sed -i '\|^/swapfile |d' /etc/fstab || ! printf "%s\n" "/swapfile none swap sw,pri=10 0 0" >>/etc/fstab; then
-        restore_file_from_backup /etc/fstab "$fstab_backup"
+    if ! ensure_swap_fstab_entry "$priority"; then
+        swapoff /swapfile 2>/dev/null || true
+        rm -f /swapfile
+        if [[ -n "$old_swap_backup" && -e "$old_swap_backup" ]]; then
+            mv "$old_swap_backup" /swapfile
+            [[ "$old_was_active" -eq 1 ]] && swapon /swapfile 2>/dev/null || true
+        fi
         return 1
     fi
+    if [[ -n "$old_swap_backup" ]]; then
+        warn "旧 swapfile 已保留为: $old_swap_backup"
+    fi
+}
+
+restart_zramswap_safely() {
+    local reset_path="/sys/block/zram0/reset"
+    local device="/dev/zram0"
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        info "[dry-run] stop zramswap；确认 /dev/zram0 未挂载；必要时 swapoff + reset；再 start"
+        return 0
+    fi
+
+    run_cmd "设置 zramswap 开机启动" systemctl enable zramswap.service || return 1
+    if ! systemctl stop zramswap.service >>"$LOG_FILE" 2>&1; then
+        warn "zramswap stop 未完全清理设备，将执行受控 reset"
+        log_event "WARN zramswap stop returned non-zero"
+    fi
+
+    if command -v findmnt >/dev/null 2>&1 && findmnt -rn -S "$device" >/dev/null 2>&1; then
+        error "$device 被用作挂载文件系统，拒绝重置"
+        return 1
+    fi
+    if grep -q "^${device}[[:space:]]" /proc/swaps 2>/dev/null; then
+        run_cmd "停用旧 ZRam swap" swapoff "$device" || return 1
+    fi
+    if [[ -e "$reset_path" ]]; then
+        if ! printf '1\n' >"$reset_path"; then
+            error "无法重置 $device"
+            return 1
+        fi
+        log_event "OK reset $device"
+    fi
+    run_cmd "启动 zramswap 服务" systemctl start zramswap.service || return 1
 }
 
 step_13_swap_zram() {
@@ -1179,6 +1930,7 @@ step_13_swap_zram() {
         error "Swap 大小不合法: $swap_size"
         return 1
     fi
+    [[ "$swap_size" == "none" ]] && swap_size=""
 
     if [[ "$choice" == "2" ]]; then
         zram_percent="$(prompt_input "ZRam 占物理内存百分比（留空跳过）" "$BOOTSTRAP_ZRAM_PERCENT")"
@@ -1215,7 +1967,7 @@ step_13_swap_zram() {
     fi
 
     if [[ -n "$swap_size" ]]; then
-        configure_swapfile "$swap_size" || return 1
+        configure_swapfile "$swap_size" "$BOOTSTRAP_SWAP_PRIORITY" || return 1
         success "Swapfile 配置完成"
     fi
 
@@ -1224,21 +1976,27 @@ step_13_swap_zram() {
         content=$(cat <<ZRAM_EOF
 ALGO=$zram_algo
 PERCENT=$zram_percent
-PRIORITY=100
+PRIORITY=$BOOTSTRAP_ZRAM_PRIORITY
 ZRAM_EOF
 )
         backup_file /etc/default/zramswap >/dev/null || return 1
         write_file /etc/default/zramswap 0644 "$content" || return 1
-        content=$(cat <<'SYSCTL_ZRAM_EOF'
-vm.swappiness=40
-vm.vfs_cache_pressure=100
+        content=$(cat <<SYSCTL_ZRAM_EOF
+vm.swappiness=$BOOTSTRAP_SWAPPINESS
+vm.vfs_cache_pressure=$BOOTSTRAP_VFS_CACHE_PRESSURE
 SYSCTL_ZRAM_EOF
 )
         backup_file /etc/sysctl.d/99-zram-swap.conf >/dev/null || return 1
         write_file /etc/sysctl.d/99-zram-swap.conf 0644 "$content" || return 1
-        run_cmd "启用 zramswap 服务" systemctl enable --now zramswap || return 1
-        run_cmd "应用 sysctl 配置" sysctl --system || return 1
-        run_cmd "重启 zramswap 服务" systemctl restart zramswap || return 1
+        run_cmd "应用内存 sysctl 配置" sysctl --load=/etc/sysctl.d/99-zram-swap.conf || return 1
+        restart_zramswap_safely || return 1
+        if [[ "$DRY_RUN" -ne 1 ]] && ! awk -v priority="$BOOTSTRAP_ZRAM_PRIORITY" '
+            $1 ~ /^\/dev\/zram/ && $5 == priority { found=1 }
+            END { exit(found ? 0 : 1) }
+        ' /proc/swaps; then
+            error "ZRam 已启动但未以期望优先级 ${BOOTSTRAP_ZRAM_PRIORITY} 生效"
+            return 1
+        fi
         success "ZRam 配置完成"
     fi
 
@@ -1471,15 +2229,43 @@ VIM_EOF
 }
 
 main() {
+    local state_ret
     parse_args "$@"
-    validate_step_selection
+    validate_runtime_options
+    if [[ "$LIST_STEPS" -eq 1 ]]; then
+        list_steps
+        return 0
+    fi
+    if [[ "$SHOW_STATUS" -eq 1 ]]; then
+        print_state_status
+        return $?
+    fi
+
     load_config
     set_defaults
+    apply_cli_overrides
+    validate_step_selection
+    validate_config_values
     echo_banner
     check_root
     check_supported_system
 
     export DEBIAN_FRONTEND=noninteractive
+
+    setup_log || {
+        error "无法初始化日志: $LOG_FILE"
+        return 1
+    }
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        prepare_state
+        state_ret=$?
+        if [[ "$state_ret" -eq 2 ]]; then
+            return 0
+        elif [[ "$state_ret" -ne 0 ]]; then
+            return "$state_ret"
+        fi
+        install_state_traps
+    fi
 
     echo -e "\n${COLOR_BOLD}开始服务器初始化...${COLOR_RESET}\n" >&2
     run_step "01" "更新系统" step_01_update
@@ -1491,7 +2277,7 @@ main() {
     run_step "07" "添加 SSH 公钥" step_07_ssh_keys
     run_step "08" "配置 Profile" step_08_profile
     run_step "09" "安装哪吒探针" step_09_nezha
-    run_step "10" "开启 BBR & FQ" step_10_bbr
+    run_step "10" "配置网络参数" step_10_bbr
     run_step "11" "禁用 IPv6" step_11_ipv6
     run_step "12" "运行 NodeQuality 测试" step_12_nodequality
     run_step "13" "配置 Swap & ZRam" step_13_swap_zram
@@ -1500,9 +2286,22 @@ main() {
     run_step "16" "配置 Vim" step_16_vim
     run_step "17" "配置时间同步" step_17_timesync
 
+    if [[ "$STATE_ENABLED" -eq 1 ]]; then
+        RUN_STATUS="complete"
+        CURRENT_STEP=""
+        FAILED_STEP=""
+        write_state || {
+            error "执行完成，但无法写入最终检查点"
+            return 1
+        }
+    fi
+    log_event "===== bootstrap v${SCRIPT_VERSION} 完成 ====="
+
     echo -e "\n${COLOR_SUCCESS}${COLOR_BOLD}========================================${COLOR_RESET}" >&2
     echo -e "${COLOR_SUCCESS}${COLOR_BOLD}  所有步骤执行完毕！${COLOR_RESET}" >&2
     echo -e "${COLOR_SUCCESS}${COLOR_BOLD}========================================${COLOR_RESET}\n" >&2
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
