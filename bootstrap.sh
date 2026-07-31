@@ -6,7 +6,7 @@
 
 set -Euo pipefail
 
-SCRIPT_VERSION="3.0.1"
+SCRIPT_VERSION="3.0.2"
 BACKUP_DIR="/var/backups/bootstrap"
 DEFAULT_STATE_FILE="/var/lib/bootstrap/state"
 DEFAULT_LOG_FILE="/var/log/bootstrap/bootstrap.log"
@@ -1579,6 +1579,7 @@ PROFILE_EOF
     backup_file /etc/profile.d/99-bootstrap.sh >/dev/null || return 1
     write_file /etc/profile.d/99-bootstrap.sh 0644 "$content" || return 1
     run_cmd "验证 Profile 配置语法" bash -n /etc/profile.d/99-bootstrap.sh || return 1
+    warn "当前 Shell 不会继承子进程的 Profile；脚本结束后执行: source /etc/profile.d/99-bootstrap.sh（或重新登录 SSH）"
 }
 
 step_09_nezha() {

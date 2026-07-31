@@ -47,6 +47,12 @@ if grep -Fq 'timedatectl set-ntp true' "$tmp_dir/timesync.log"; then
     exit 1
 fi
 
+bash bootstrap.sh \
+    --dry-run \
+    --yes \
+    --only 08 >"$tmp_dir/profile.log" 2>&1
+grep -Fq 'source /etc/profile.d/99-bootstrap.sh' "$tmp_dir/profile.log"
+
 bad_config="$tmp_dir/bad.conf"
 printf 'BOOTSTRAP_UNKNOWN=value\n' >"$bad_config"
 if bash bootstrap.sh --dry-run --config "$bad_config" >"$tmp_dir/bad.log" 2>&1; then

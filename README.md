@@ -69,6 +69,7 @@ Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件�
 
 - 修改 SSH 前先确认控制台/VNC/救援模式可用；首次切换端口建议暂时保留旧端口。
 - SSH 配置写入后会先执行 `sshd -t`，失败会恢复备份。
+- 步骤 08 写入的终端颜色仅对新 Shell 自动生效；当前终端可执行 `source /etc/profile.d/99-bootstrap.sh`。
 - 关键配置备份到 `/var/backups/bootstrap/`；脚本不会把配置文件内容或密钥写进检查点。
 - 哪吒和 NodeQuality 会下载外部脚本；Docker 可能绕过普通 UFW 规则，请按实际环境复核。
 
