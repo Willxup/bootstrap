@@ -34,6 +34,19 @@ if grep -Fq '/swapfile（priority=' "$tmp_dir/zram-only.log"; then
     exit 1
 fi
 
+bash bootstrap.sh \
+    --dry-run \
+    --yes \
+    --only 17 \
+    --timezone Asia/Shanghai >"$tmp_dir/timesync.log" 2>&1
+grep -Fq 'systemctl enable --now systemd-timesyncd' "$tmp_dir/timesync.log"
+grep -Fq 'systemctl restart systemd-timesyncd' "$tmp_dir/timesync.log"
+grep -Fq 'systemctl is-active --quiet systemd-timesyncd' "$tmp_dir/timesync.log"
+if grep -Fq 'timedatectl set-ntp true' "$tmp_dir/timesync.log"; then
+    echo "redundant timedatectl set-ntp call is still present" >&2
+    exit 1
+fi
+
 bad_config="$tmp_dir/bad.conf"
 printf 'BOOTSTRAP_UNKNOWN=value\n' >"$bad_config"
 if bash bootstrap.sh --dry-run --config "$bad_config" >"$tmp_dir/bad.log" 2>&1; then

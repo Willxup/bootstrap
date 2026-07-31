@@ -6,7 +6,7 @@
 
 set -Euo pipefail
 
-SCRIPT_VERSION="3.0.0"
+SCRIPT_VERSION="3.0.1"
 BACKUP_DIR="/var/backups/bootstrap"
 DEFAULT_STATE_FILE="/var/lib/bootstrap/state"
 DEFAULT_LOG_FILE="/var/log/bootstrap/bootstrap.log"
@@ -1368,8 +1368,8 @@ step_17_timesync() {
     write_file /etc/systemd/timesyncd.conf.d/60-ntp.conf 0644 "$content" || return 1
     run_cmd "设置系统时区" timedatectl set-timezone "$timezone" || return 1
     run_cmd "启用 systemd-timesyncd" systemctl enable --now systemd-timesyncd || return 1
-    run_cmd "开启 systemd NTP 同步" timedatectl set-ntp true || return 1
     run_cmd "重启 systemd-timesyncd" systemctl restart systemd-timesyncd || return 1
+    run_cmd "验证 systemd-timesyncd 服务" systemctl is-active --quiet systemd-timesyncd || return 1
     run_cmd "显示时间同步状态" timedatectl timesync-status || true
 }
 
