@@ -6,7 +6,7 @@
 
 set -Euo pipefail
 
-SCRIPT_VERSION="3.0.2"
+SCRIPT_VERSION="3.1.0"
 BACKUP_DIR="/var/backups/bootstrap"
 DEFAULT_STATE_FILE="/var/lib/bootstrap/state"
 DEFAULT_LOG_FILE="/var/log/bootstrap/bootstrap.log"
@@ -34,6 +34,7 @@ STATE_SCRIPT_VERSION=""
 STATE_ONLY_STEPS=""
 STATE_SKIP_STEPS=""
 STATE_LOG_FILE=""
+STATE_LAYOUT_MIGRATED=0
 RUN_STARTED_AT=""
 COMPLETED_STEPS=""
 CURRENT_STEP=""
@@ -72,7 +73,7 @@ usage() {
   --state-file FILE         检查点路径（默认 /var/lib/bootstrap/state）
   --log-file FILE           日志路径（默认 /var/log/bootstrap/bootstrap.log）
   --only 05,06              只执行指定步骤
-  --skip 12,14              跳过指定步骤
+  --skip 11,17              跳过指定步骤
   --hostname NAME           覆盖配置中的主机名
   --timezone ZONE           覆盖配置中的时区
   --ssh-port PORT           覆盖配置中的 SSH 端口
@@ -846,13 +847,13 @@ step_name() {
         08) echo "配置 Profile" ;;
         09) echo "安装哪吒探针" ;;
         10) echo "配置网络参数" ;;
-        11) echo "禁用 IPv6" ;;
-        12) echo "运行 NodeQuality" ;;
-        13) echo "配置 Swap 与 ZRam" ;;
-        14) echo "安装 CrowdSec" ;;
-        15) echo "安装 Docker" ;;
-        16) echo "配置 Vim" ;;
-        17) echo "配置时间同步" ;;
+        11) echo "禁用 IPv6（含 UFW）" ;;
+        12) echo "配置 Swap 与 ZRam" ;;
+        13) echo "安装 CrowdSec" ;;
+        14) echo "安装 Docker" ;;
+        15) echo "配置 Vim" ;;
+        16) echo "配置时间同步" ;;
+        17) echo "运行 NodeQuality" ;;
         *) echo "未知步骤" ;;
     esac
 }
@@ -919,6 +920,78 @@ configuration_fingerprint() {
     } | hash_stdin
 }
 
+state_uses_legacy_step_layout() {
+    case "$STATE_SCRIPT_VERSION" in
+        3.0.0 | 3.0.1 | 3.0.2) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+map_legacy_step() {
+    local raw_step="$1"
+    local number
+    [[ "$raw_step" =~ ^[0-9]+$ ]] || return 1
+    number=$((10#$raw_step))
+    case "$number" in
+        12) number=17 ;;
+        13) number=12 ;;
+        14) number=13 ;;
+        15) number=14 ;;
+        16) number=15 ;;
+        17) number=16 ;;
+    esac
+    printf "%02d" "$number"
+}
+
+map_legacy_step_list() {
+    local list="$1"
+    local item mapped result=""
+    local -a items=()
+    [[ -z "$list" ]] && return 0
+    IFS=',' read -r -a items <<<"$list"
+    for item in "${items[@]}"; do
+        item="${item//[[:space:]]/}"
+        mapped="$(map_legacy_step "$item")" || return 1
+        result="${result:+$result,}$mapped"
+    done
+    printf "%s" "$result"
+}
+
+remove_step_from_list() {
+    local list="$1"
+    local target="$2"
+    local item result=""
+    local -a items=()
+    [[ -z "$list" ]] && return 0
+    IFS=',' read -r -a items <<<"$list"
+    for item in "${items[@]}"; do
+        item="${item//[[:space:]]/}"
+        if [[ "$item" != "$target" && "$item" != "${target#0}" ]]; then
+            result="${result:+$result,}$item"
+        fi
+    done
+    printf "%s" "$result"
+}
+
+migrate_loaded_state_steps() {
+    state_uses_legacy_step_layout || return 0
+    STATE_ONLY_STEPS="$(map_legacy_step_list "$STATE_ONLY_STEPS")" || return 1
+    STATE_SKIP_STEPS="$(map_legacy_step_list "$STATE_SKIP_STEPS")" || return 1
+    COMPLETED_STEPS="$(map_legacy_step_list "$COMPLETED_STEPS")" || return 1
+    if [[ -n "$CURRENT_STEP" ]]; then
+        CURRENT_STEP="$(map_legacy_step "$CURRENT_STEP")" || return 1
+    fi
+    if [[ -n "$FAILED_STEP" ]]; then
+        FAILED_STEP="$(map_legacy_step "$FAILED_STEP")" || return 1
+    fi
+    if [[ "$RUN_STATUS" != "complete" ]] && contains_step "$COMPLETED_STEPS" "17"; then
+        COMPLETED_STEPS="$(remove_step_from_list "$COMPLETED_STEPS" "17")" || return 1
+        warn "旧 NodeQuality 完成标记已重置，将在剩余配置完成后重新测试"
+    fi
+    STATE_LAYOUT_MIGRATED=1
+    warn "检测到 v3.0.x 检查点，已将步骤编号自动迁移到 v3.1"
+}
+
 write_state() {
     local tmp
     [[ "$STATE_ENABLED" -eq 1 ]] || return 0
@@ -959,6 +1032,7 @@ load_state() {
     STATE_SCRIPT_VERSION=""
     STATE_ONLY_STEPS=""
     STATE_SKIP_STEPS=""
+    STATE_LAYOUT_MIGRATED=0
     RUN_STARTED_AT=""
     RUN_STATUS=""
     COMPLETED_STEPS=""
@@ -981,11 +1055,15 @@ load_state() {
         esac
     done <"$STATE_FILE"
 
-    if [[ "$state_version" != "1" || ! "$STATE_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
+    if [[ "$state_version" != "1" || -z "$STATE_SCRIPT_VERSION" || ! "$STATE_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
         error "检查点格式无效: $STATE_FILE"
         return 1
     fi
     STATE_LOG_FILE="$stored_log_file"
+    migrate_loaded_state_steps || {
+        error "旧检查点步骤编号迁移失败: $STATE_FILE"
+        return 1
+    }
     return 0
 }
 
@@ -1339,7 +1417,7 @@ FallbackNTP=0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org
 TIMESYNCD_GLOBAL_EOF
 }
 
-step_17_timesync() {
+step_16_timesync() {
     local timezone content installed_time_sync
     installed_time_sync="$(installed_external_time_sync_packages)"
     if [[ -n "$installed_time_sync" ]]; then
@@ -1349,7 +1427,7 @@ step_17_timesync() {
 
     timezone="$(prompt_input "系统时区" "$BOOTSTRAP_TIMEZONE")"
     if [[ -z "$timezone" ]]; then
-        warn "未输入时区，跳过步骤 17"
+        warn "未输入时区，跳过步骤 16"
         return 0
     fi
     if ! validate_timezone "$timezone"; then
@@ -1358,7 +1436,7 @@ step_17_timesync() {
     fi
 
     if ! confirm "配置时区为 ${timezone}，启用 systemd-timesyncd（Debian/NTP Pool）"; then
-        warn "跳过步骤 17"
+        warn "跳过步骤 16"
         return 0
     fi
 
@@ -1701,6 +1779,62 @@ step_10_bbr() {
     fi
 }
 
+configure_ufw_ipv6_disabled() {
+    local ufw_defaults="/etc/default/ufw"
+    local backup="" tmp
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        info "[dry-run] 如果 UFW 已安装，设置 /etc/default/ufw: IPV6=no"
+        info "[dry-run] 如果 UFW 已启用，执行 ufw reload 并确认不再显示 (v6) 规则"
+        return 0
+    fi
+    if [[ ! -f "$ufw_defaults" ]]; then
+        info "未发现 /etc/default/ufw，跳过 UFW IPv6 联动"
+        return 0
+    fi
+
+    if grep -Eq '^[[:space:]]*IPV6[[:space:]]*=[[:space:]]*no[[:space:]]*$' "$ufw_defaults"; then
+        info "UFW 已配置 IPV6=no"
+    else
+        backup="$(backup_file "$ufw_defaults")" || return 1
+        tmp="$(mktemp)" || return 1
+        awk '
+            BEGIN { written=0 }
+            /^[[:space:]]*IPV6[[:space:]]*=/ {
+                if (written == 0) print "IPV6=no"
+                written=1
+                next
+            }
+            { print }
+            END { if (written == 0) print "IPV6=no" }
+        ' "$ufw_defaults" >"$tmp" || {
+            rm -f "$tmp"
+            return 1
+        }
+        if ! install -m 0644 "$tmp" "$ufw_defaults"; then
+            rm -f "$tmp"
+            restore_file_from_backup "$ufw_defaults" "$backup"
+            return 1
+        fi
+        rm -f "$tmp"
+        success "UFW 已设置 IPV6=no"
+    fi
+
+    if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -Eq '^Status:[[:space:]]+active'; then
+        if ! run_cmd "重载 UFW 以移除 IPv6 规则" ufw reload; then
+            if [[ -n "$backup" ]]; then
+                restore_file_from_backup "$ufw_defaults" "$backup"
+                ufw reload >>"$LOG_FILE" 2>&1 || true
+            fi
+            return 1
+        fi
+        if LC_ALL=C ufw status 2>/dev/null | grep -Fq '(v6)'; then
+            error "UFW 重载后仍显示 (v6) 规则，请检查: ufw status"
+            return 1
+        fi
+    fi
+}
+
 step_11_ipv6() {
     local content
     if ! confirm "禁用 IPv6（可选）"; then
@@ -1713,15 +1847,16 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 IPV6_EOF
 )
+    configure_ufw_ipv6_disabled || return 1
     backup_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf >/dev/null || return 1
     write_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf 0644 "$content" || return 1
     run_cmd "应用 IPv6 sysctl 配置" sysctl --load=/etc/sysctl.d/99-bootstrap-disable-ipv6.conf || return 1
 }
 
-step_12_nodequality() {
+step_17_nodequality() {
     local tmp ret
     if ! confirm "运行 NodeQuality 延迟测试（会下载官方测试脚本）"; then
-        warn "跳过步骤 12"
+        warn "跳过步骤 17"
         return 0
     fi
     apt_install curl || return 1
@@ -1914,11 +2049,11 @@ restart_zramswap_safely() {
     run_cmd "启动 zramswap 服务" systemctl start zramswap.service || return 1
 }
 
-step_13_swap_zram() {
+step_12_swap_zram() {
     local choice swap_size zram_percent zram_algo desc content
     choice="$(prompt_input "配置模式（1=仅Swap, 2=Swap+ZRam）" "2")"
     if [[ -z "$choice" ]]; then
-        warn "跳过步骤 13"
+        warn "跳过步骤 12"
         return 0
     fi
     if [[ "$choice" != "1" && "$choice" != "2" ]]; then
@@ -1951,11 +2086,11 @@ step_13_swap_zram() {
     fi
 
     if [[ -z "$swap_size" && -z "${zram_percent:-}" ]]; then
-        warn "未配置 Swap 和 ZRam，跳过步骤 13"
+        warn "未配置 Swap 和 ZRam，跳过步骤 12"
         return 0
     fi
     if [[ -z "$swap_size" && "${zram_percent:-}" == "0" ]]; then
-        warn "未配置 Swap 和 ZRam，跳过步骤 13"
+        warn "未配置 Swap 和 ZRam，跳过步骤 12"
         return 0
     fi
 
@@ -1963,7 +2098,7 @@ step_13_swap_zram() {
     [[ -n "$swap_size" ]] && desc="Swap ($swap_size)"
     [[ -n "${zram_percent:-}" && "$zram_percent" != "0" ]] && desc="${desc:+$desc + }ZRam (${zram_percent}%/$zram_algo)"
     if ! confirm "配置 $desc"; then
-        warn "跳过步骤 13"
+        warn "跳过步骤 12"
         return 0
     fi
 
@@ -2043,9 +2178,9 @@ install_crowdsec_collection() {
     run_cmd "安装/确认 CrowdSec collection: $collection" cscli collections install "$collection"
 }
 
-step_14_crowdsec() {
+step_13_crowdsec() {
     if ! confirm "安装 CrowdSec 防护（ufw 日志、rsyslog、nginx-proxy-manager、iptables、sshd 规则）"; then
-        warn "跳过步骤 14"
+        warn "跳过步骤 13"
         return 0
     fi
     apt_install ufw rsyslog curl gnupg apt-transport-https || return 1
@@ -2134,10 +2269,10 @@ deb [arch=$arch signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.
 DOCKER_REPO_EOF
 }
 
-step_15_docker() {
+step_14_docker() {
     local content shim docker_daemon_backup
     if ! confirm "安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转"; then
-        warn "跳过步骤 15"
+        warn "跳过步骤 14"
         return 0
     fi
     remove_conflicting_docker_packages || return 1
@@ -2180,10 +2315,10 @@ COMPOSE_SHIM_EOF
     warn "Docker 会直接操作 iptables。若依赖 UFW 做严格入站控制，请额外检查 DOCKER-USER 链。"
 }
 
-step_16_vim() {
+step_15_vim() {
     local content
     if ! confirm "配置 ~/.vimrc"; then
-        warn "跳过步骤 16"
+        warn "跳过步骤 15"
         return 0
     fi
     read -r -d '' content <<'VIM_EOF' || true
@@ -2279,13 +2414,13 @@ main() {
     run_step "08" "配置 Profile" step_08_profile
     run_step "09" "安装哪吒探针" step_09_nezha
     run_step "10" "配置网络参数" step_10_bbr
-    run_step "11" "禁用 IPv6" step_11_ipv6
-    run_step "12" "运行 NodeQuality 测试" step_12_nodequality
-    run_step "13" "配置 Swap & ZRam" step_13_swap_zram
-    run_step "14" "安装 CrowdSec" step_14_crowdsec
-    run_step "15" "安装 Docker" step_15_docker
-    run_step "16" "配置 Vim" step_16_vim
-    run_step "17" "配置时间同步" step_17_timesync
+    run_step "11" "禁用 IPv6（含 UFW）" step_11_ipv6
+    run_step "12" "配置 Swap & ZRam" step_12_swap_zram
+    run_step "13" "安装 CrowdSec" step_13_crowdsec
+    run_step "14" "安装 Docker" step_14_docker
+    run_step "15" "配置 Vim" step_15_vim
+    run_step "16" "配置时间同步" step_16_timesync
+    run_step "17" "运行 NodeQuality 测试" step_17_nodequality
 
     if [[ "$STATE_ENABLED" -eq 1 ]]; then
         RUN_STATUS="complete"

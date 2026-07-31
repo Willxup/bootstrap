@@ -11,7 +11,7 @@ bash bootstrap.sh \
     --dry-run \
     --yes \
     --config bootstrap.conf.example \
-    --only 04,10,13 \
+    --only 04,10,12 \
     --hostname cli-server \
     --network-profile standard \
     --swap-size 2G \
@@ -25,7 +25,7 @@ grep -Fq 'ZRam (20%/lz4)' "$output"
 bash bootstrap.sh \
     --dry-run \
     --yes \
-    --only 13 \
+    --only 12 \
     --swap-size none \
     --zram-percent 20 >"$tmp_dir/zram-only.log" 2>&1
 grep -Fq '配置 ZRam (20%/lz4)' "$tmp_dir/zram-only.log"
@@ -37,7 +37,7 @@ fi
 bash bootstrap.sh \
     --dry-run \
     --yes \
-    --only 17 \
+    --only 16 \
     --timezone Asia/Shanghai >"$tmp_dir/timesync.log" 2>&1
 grep -Fq 'systemctl enable --now systemd-timesyncd' "$tmp_dir/timesync.log"
 grep -Fq 'systemctl restart systemd-timesyncd' "$tmp_dir/timesync.log"
@@ -52,6 +52,27 @@ bash bootstrap.sh \
     --yes \
     --only 08 >"$tmp_dir/profile.log" 2>&1
 grep -Fq 'source /etc/profile.d/99-bootstrap.sh' "$tmp_dir/profile.log"
+
+bash bootstrap.sh \
+    --dry-run \
+    --yes \
+    --only 12,16,17 \
+    --timezone UTC >"$tmp_dir/order.log" 2>&1
+swap_line="$(grep -n '步骤 12: 配置 Swap & ZRam' "$tmp_dir/order.log" | cut -d: -f1)"
+timesync_line="$(grep -n '步骤 16: 配置时间同步' "$tmp_dir/order.log" | cut -d: -f1)"
+nodequality_line="$(grep -n '步骤 17: 运行 NodeQuality 测试' "$tmp_dir/order.log" | cut -d: -f1)"
+if ! ((swap_line < timesync_line && timesync_line < nodequality_line)); then
+    echo "NodeQuality is not the final step" >&2
+    exit 1
+fi
+grep -Fq '17  运行 NodeQuality' < <(bash bootstrap.sh --list-steps)
+
+bash bootstrap.sh \
+    --dry-run \
+    --yes \
+    --only 11 >"$tmp_dir/ipv6.log" 2>&1
+grep -Fq '/etc/default/ufw: IPV6=no' "$tmp_dir/ipv6.log"
+grep -Fq 'ufw reload' "$tmp_dir/ipv6.log"
 
 bad_config="$tmp_dir/bad.conf"
 printf 'BOOTSTRAP_UNKNOWN=value\n' >"$bad_config"

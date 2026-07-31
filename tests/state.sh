@@ -11,7 +11,7 @@ source ./bootstrap.sh
 
 STATE_FILE="$tmp_dir/state"
 LOG_FILE="$tmp_dir/bootstrap.log"
-ONLY_STEPS="04,10,13"
+ONLY_STEPS="04,10,12"
 SKIP_STEPS=""
 set_defaults
 
@@ -41,6 +41,49 @@ if ! contains_step "$COMPLETED_STEPS" "04"; then
     echo "completed step was lost after config change" >&2
     exit 1
 fi
+
+legacy_state="$tmp_dir/legacy.state"
+{
+    printf 'STATE_VERSION=1\n'
+    printf 'SCRIPT_VERSION=3.0.2\n'
+    printf 'FINGERPRINT=0000000000000000000000000000000000000000000000000000000000000000\n'
+    printf 'STARTED_AT=2026-01-01T00:00:00Z\n'
+    printf 'UPDATED_AT=2026-01-01T00:00:01Z\n'
+    printf 'STATUS=failed\n'
+    printf 'ONLY_STEPS=12,13,14,15,16,17\n'
+    printf 'SKIP_STEPS=\n'
+    printf 'COMPLETED_STEPS=12,13,14,16\n'
+    printf 'CURRENT_STEP=17\n'
+    printf 'FAILED_STEP=17\n'
+    printf 'LOG_FILE=%s\n' "$tmp_dir/legacy.log"
+} >"$legacy_state"
+
+STATE_FILE="$legacy_state"
+load_state 2>"$tmp_dir/migration.log"
+if [[ "$STATE_LAYOUT_MIGRATED" -ne 1 ]]; then
+    echo "legacy checkpoint layout was not detected" >&2
+    exit 1
+fi
+for migrated_step in 12 13 15; do
+    if ! contains_step "$COMPLETED_STEPS" "$migrated_step"; then
+        echo "legacy completed step $migrated_step was not migrated" >&2
+        exit 1
+    fi
+done
+if [[ "$CURRENT_STEP" != "16" || "$FAILED_STEP" != "16" ]]; then
+    echo "legacy failed timesync step was not migrated to 16" >&2
+    exit 1
+fi
+if ! contains_step "$STATE_ONLY_STEPS" "17"; then
+    echo "legacy NodeQuality selection was not migrated to 17" >&2
+    exit 1
+fi
+if contains_step "$COMPLETED_STEPS" "17"; then
+    echo "legacy NodeQuality completion was not reset for final retest" >&2
+    exit 1
+fi
+grep -Fq '已将步骤编号自动迁移到 v3.1' "$tmp_dir/migration.log"
+grep -Fq '将在剩余配置完成后重新测试' "$tmp_dir/migration.log"
 
 flow_state="$tmp_dir/flow.state"
 set +e

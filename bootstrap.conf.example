@@ -1,8 +1,8 @@
 # 复制为 bootstrap.conf 后使用；bootstrap.conf 已被 Git 忽略。
 # 配置文件只允许 BOOTSTRAP_KEY=value，不执行 shell 代码。
 
-# 非交互运行的步骤。03/11/12 默认不选：改密码、禁 IPv6、线路测试更适合手动决定。
-BOOTSTRAP_ONLY_STEPS=01,02,04,05,06,07,08,09,10,13,14,15,16,17
+# 非交互运行的步骤。03/11/17 默认不选：改密码、禁 IPv6、线路测试更适合手动决定。
+BOOTSTRAP_ONLY_STEPS=01,02,04,05,06,07,08,09,10,12,13,14,15,16
 BOOTSTRAP_SKIP_STEPS=
 
 BOOTSTRAP_HOSTNAME=server-01

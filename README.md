@@ -44,15 +44,17 @@ sudo ./bootstrap.sh --config bootstrap.conf --yes --resume
 
 检查点默认位于 `/var/lib/bootstrap/state`，完整命令输出位于 `/var/log/bootstrap/bootstrap.log`。续跑时可以修正配置；新值只影响失败和待执行步骤，已经完成的步骤不会重跑。确实要放弃旧进度时使用 `--reset-state`。
 
+v3.0.x 检查点会自动迁移到当前步骤编号；NodeQuality 现在是完成全部配置后的最后一步 17。
+
 ## 常用命令
 
 ```bash
 ./bootstrap.sh --list-steps
 sudo ./bootstrap.sh --only 05,06
-sudo ./bootstrap.sh --skip 11,12
+sudo ./bootstrap.sh --skip 11,17
 sudo ./bootstrap.sh --hostname server-02 --ssh-port 2222 --only 04,05,06
 sudo ./bootstrap.sh --network-profile standard --only 10
-sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 13
+sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 ```
 
 命令行值覆盖配置文件。完整参数见 `./bootstrap.sh --help`，全部配置项见 [`bootstrap.conf.example`](bootstrap.conf.example)。
@@ -69,6 +71,7 @@ Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件�
 
 - 修改 SSH 前先确认控制台/VNC/救援模式可用；首次切换端口建议暂时保留旧端口。
 - SSH 配置写入后会先执行 `sshd -t`，失败会恢复备份。
+- 选择步骤 11 禁用 IPv6 时，会同步设置 UFW `IPV6=no` 并重载，避免继续生成 `(v6)` 规则。
 - 步骤 08 写入的终端颜色仅对新 Shell 自动生效；当前终端可执行 `source /etc/profile.d/99-bootstrap.sh`。
 - 关键配置备份到 `/var/backups/bootstrap/`；脚本不会把配置文件内容或密钥写进检查点。
 - 哪吒和 NodeQuality 会下载外部脚本；Docker 可能绕过普通 UFW 规则，请按实际环境复核。
