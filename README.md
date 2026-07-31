@@ -2,17 +2,33 @@
 
 面向 Debian/Ubuntu 的单文件服务器初始化脚本。支持配置文件、按步骤执行、dry-run、失败停止和检查点续跑。
 
-## 快速开始
+## 一行启动
+
+使用 `root` 登录 Debian/Ubuntu 后直接执行：
 
 ```bash
-curl -LO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
-curl -LO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.conf.example
+curl -fsSL https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh -o bootstrap.sh && bash bootstrap.sh
+```
+
+只下载脚本：
+
+```bash
+curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh || wget -O bootstrap.sh https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
+```
+
+普通用户运行时使用 `sudo bash bootstrap.sh`。脚本默认逐步询问，也可以先执行 `bash bootstrap.sh --dry-run` 预览。
+
+## 使用配置文件
+
+```bash
+curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
+curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.conf.example
 cp bootstrap.conf.example bootstrap.conf
 chmod 600 bootstrap.conf
 vim bootstrap.conf
 
-sudo ./bootstrap.sh --dry-run --config bootstrap.conf --yes
-sudo ./bootstrap.sh --config bootstrap.conf --yes
+sudo bash bootstrap.sh --dry-run --config bootstrap.conf --yes
+sudo bash bootstrap.sh --config bootstrap.conf --yes
 ```
 
 `bootstrap.conf` 已被 Git 忽略。示例只使用公开占位值；请把主机名、端口、公钥、监控地址和密钥留在本地配置中。
