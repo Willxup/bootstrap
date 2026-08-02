@@ -1,24 +1,26 @@
 # Bootstrap
 
-面向 Debian/Ubuntu 的单文件服务器初始化脚本。支持配置文件、按步骤执行、dry-run、失败停止和检查点续跑。
+**English** | [简体中文](README.zh.md)
 
-## 一行启动
+A single-file server bootstrap script for Debian/Ubuntu. Supports configuration files, selective steps, dry runs, stopping on failure, and resuming from checkpoints.
 
-使用 `root` 登录 Debian/Ubuntu 后直接执行：
+## Quick start
+
+Log in to Debian/Ubuntu as `root` and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh -o bootstrap.sh && bash bootstrap.sh
 ```
 
-只下载脚本：
+To download the script without running it:
 
 ```bash
 curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh || wget -O bootstrap.sh https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
 ```
 
-普通用户运行时使用 `sudo bash bootstrap.sh`。脚本默认逐步询问，也可以先执行 `bash bootstrap.sh --dry-run` 预览。
+As a regular user, run `sudo bash bootstrap.sh`. The script asks for confirmation at each step by default. Use `bash bootstrap.sh --dry-run` to preview the changes first.
 
-## 使用配置文件
+## Configuration file
 
 ```bash
 curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh
@@ -31,22 +33,22 @@ sudo bash bootstrap.sh --dry-run --config bootstrap.conf --yes
 sudo bash bootstrap.sh --config bootstrap.conf --yes
 ```
 
-`bootstrap.conf` 已被 Git 忽略。示例只使用公开占位值；请把主机名、端口、公钥、监控地址和密钥留在本地配置中。
+Git ignores `bootstrap.conf`. The example contains public placeholders only; keep your hostnames, ports, public keys, monitoring addresses, and secrets in your local configuration.
 
-## 失败后继续
+## Resume after a failure
 
-脚本在步骤失败时立即停止，成功步骤不会重复执行：
+The script stops immediately when a step fails. Completed steps are skipped when resuming:
 
 ```bash
 sudo ./bootstrap.sh --status
 sudo ./bootstrap.sh --config bootstrap.conf --yes --resume
 ```
 
-检查点默认位于 `/var/lib/bootstrap/state`，完整命令输出位于 `/var/log/bootstrap/bootstrap.log`。续跑时可以修正配置；新值只影响失败和待执行步骤，已经完成的步骤不会重跑。确实要放弃旧进度时使用 `--reset-state`。
+The default checkpoint is `/var/lib/bootstrap/state`, and full command output is saved to `/var/log/bootstrap/bootstrap.log`. You can correct the configuration before resuming: new values affect only failed and pending steps, while completed steps are skipped. Use `--reset-state` to discard the previous progress and start a new run.
 
-v3.0.x 检查点会自动迁移到当前步骤编号；NodeQuality 现在是完成全部配置后的最后一步 17。
+Checkpoints from v3.0.x are automatically migrated to the current step numbering. NodeQuality now runs last, as step 17, after all configuration steps.
 
-## 常用命令
+## Common commands
 
 ```bash
 ./bootstrap.sh --list-steps
@@ -57,26 +59,26 @@ sudo ./bootstrap.sh --network-profile standard --only 10
 sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 ```
 
-命令行值覆盖配置文件。完整参数见 `./bootstrap.sh --help`，全部配置项见 [`bootstrap.conf.example`](bootstrap.conf.example)。
+Command-line values override the configuration file. See `./bootstrap.sh --help` for all options and [`bootstrap.conf.example`](bootstrap.conf.example) for configuration settings.
 
-## 网络与内存档位
+## Network and memory profiles
 
-- `minimal`：只启用 BBR + FQ，默认且最稳妥。
-- `standard`：额外使用 32 MiB TCP buffer，适合内存充足的长距离直连节点。
-- `low-memory`：使用 8 MiB buffer，适合约 1 GiB 的小机器。
+- `minimal`: enables BBR + FQ only; the conservative default.
+- `standard`: also uses 32 MiB TCP buffers, for long-distance direct connections on servers with sufficient memory.
+- `low-memory`: uses 8 MiB buffers, for small servers with around 1 GiB of memory.
 
-Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件中修改；`swap-size=none` 或 `zram-percent=0` 可单独关闭其中一项。Debian 13 上脚本会先安全停用并 reset 旧 ZRam 设备，再按新配置启动，避免普通 `restart` 沿用错误容量。
+Swap/ZRam sizes, percentages, priorities, and swappiness can be changed in the configuration file. `swap-size=none` or `zram-percent=0` skips configuring the corresponding component. On Debian 13, the script safely deactivates and resets the old ZRam device before starting it with the new configuration, avoiding an incorrect capacity retained by a plain `restart`.
 
-## 安全边界
+## Safety considerations
 
-- 修改 SSH 前先确认控制台/VNC/救援模式可用；首次切换端口建议暂时保留旧端口。
-- SSH 配置写入后会先执行 `sshd -t`，失败会恢复备份。
-- 选择步骤 11 禁用 IPv6 时，会同步设置 UFW `IPV6=no` 并重载，避免继续生成 `(v6)` 规则。
-- 步骤 08 写入的终端颜色仅对新 Shell 自动生效；当前终端可执行 `source /etc/profile.d/99-bootstrap.sh`。
-- 关键配置备份到 `/var/backups/bootstrap/`；脚本不会把配置文件内容或密钥写进检查点。
-- 哪吒和 NodeQuality 会下载外部脚本；Docker 可能绕过普通 UFW 规则，请按实际环境复核。
+- Before changing SSH settings, confirm that console, VNC, or rescue access is available. Keep the old port temporarily when switching ports for the first time.
+- SSH configuration is checked with `sshd -t` after writing; the backup is restored if validation fails.
+- Step 11 also sets UFW's `IPV6=no` and reloads UFW when disabling IPv6, preventing further `(v6)` rules.
+- Terminal colors written by step 08 apply automatically to new shells. To apply them in the current shell, run `source /etc/profile.d/99-bootstrap.sh`.
+- Important configuration files are backed up to `/var/backups/bootstrap/`. Configuration contents and secrets are not stored in checkpoints.
+- Nezha and NodeQuality download external scripts. Docker may bypass ordinary UFW rules; review the effective rules for your environment.
 
-## 测试
+## Tests
 
 ```bash
 bash tests/run.sh
