@@ -23,6 +23,7 @@ RESUME=0
 RESET_STATE=0
 SHOW_STATUS=0
 LIST_STEPS=0
+UI_LANG=en
 STATE_FILE="$DEFAULT_STATE_FILE"
 LOG_FILE="$DEFAULT_LOG_FILE"
 STATE_ENABLED=0
@@ -59,11 +60,83 @@ success() { echo -e "${COLOR_SUCCESS} [SUCCESS]${COLOR_RESET} $*" >&2; }
 warn() { echo -e "${COLOR_WARN}    [WARN]${COLOR_RESET} $*" >&2; }
 error() { echo -e "${COLOR_ERROR}   [ERROR]${COLOR_RESET} $*" >&2; }
 
+# Keep both languages inline so downloading this script is sufficient.
+msg() {
+    if [[ "$UI_LANG" == "zh" ]]; then
+        printf '%s' "$2"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# Resolve the language before help or argument errors, regardless of option order.
+# Skip values of other options so they cannot be mistaken for language switches.
+select_language() {
+    local language="${BOOTSTRAP_LANG:-en}"
+    [[ "$language" == "zh" ]] && UI_LANG=zh
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --lang)
+                shift
+                require_option_value "--lang" "${1:-}"
+                language="$1"
+                ;;
+            --lang=*)
+                language="${1#--lang=}"
+                ;;
+            --config | --state-file | --log-file | --only | --skip | \
+                --hostname | --timezone | --ssh-port | --network-profile | \
+                --swap-size | --zram-percent)
+                [[ $# -gt 1 && "$2" != --* ]] && shift
+                ;;
+        esac
+        case "$language" in
+            en | zh) UI_LANG="$language" ;;
+        esac
+        shift
+    done
+    case "$language" in
+        en | zh) UI_LANG="$language" ;;
+        *)
+            error "$(msg "Unsupported language: $language (use en or zh)" "不支持的语言: ${language}（请使用 en 或 zh）")"
+            exit 1
+            ;;
+    esac
+}
+
 usage() {
-    cat <<'EOF'
+    if [[ "$UI_LANG" == "en" ]]; then
+        cat <<'EOF'
+Usage: sudo ./bootstrap.sh [OPTIONS]
+
+Options:
+  --lang en|zh              Output language (default: en; overrides BOOTSTRAP_LANG)
+  --config FILE             Read a configuration file
+  --yes, --all              Run noninteractively; skip steps missing required input
+  --dry-run                 Preview only; no root required and no state written
+  --resume                  Resume after a failure or interruption
+  --status                  Show checkpoint status
+  --reset-state             Discard unfinished progress and start a new run
+  --state-file FILE         Checkpoint path (default: /var/lib/bootstrap/state)
+  --log-file FILE           Log path (default: /var/log/bootstrap/bootstrap.log)
+  --only 05,06              Run only the selected steps
+  --skip 11,17              Skip the selected steps
+  --hostname NAME           Override the configured hostname
+  --timezone ZONE           Override the configured time zone
+  --ssh-port PORT           Override the configured SSH port
+  --network-profile PROFILE minimal / standard / low-memory
+  --swap-size SIZE          Override swap size, e.g. 2G; none skips configuration
+  --zram-percent PERCENT    Override the ZRam percentage
+  --verbose                 Also display full command output in the terminal
+  --list-steps              List available steps
+  -h, --help                Show this help
+EOF
+    else
+        cat <<'EOF'
 用法: sudo ./bootstrap.sh [选项]
 
 选项:
+  --lang en|zh              输出语言（默认 en；覆盖 BOOTSTRAP_LANG 环境变量）
   --config FILE             读取配置文件
   --yes, --all              非交互执行；缺少必要输入的步骤会安全跳过
   --dry-run                 只预览，不要求 root、不写状态
@@ -84,13 +157,14 @@ usage() {
   --list-steps              列出步骤
   -h, --help                显示帮助
 EOF
+    fi
 }
 
 require_option_value() {
     local option="$1"
     local value="${2:-}"
     if [[ -z "$value" || "$value" == --* ]]; then
-        error "$option 需要一个值"
+        error "$(msg "$option requires a value" "$option 需要一个值")"
         exit 1
     fi
 }
@@ -98,6 +172,12 @@ require_option_value() {
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --lang)
+                shift
+                require_option_value "--lang" "${1:-}"
+                ;;
+            --lang=*)
+                ;;
             --yes | --all)
                 AUTO_YES=1
                 ;;
@@ -181,7 +261,7 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                error "未知参数: $1"
+                error "$(msg "Unknown option: $1" "未知参数: $1")"
                 usage
                 exit 1
                 ;;
@@ -2366,6 +2446,7 @@ VIM_EOF
 
 main() {
     local state_ret
+    select_language "$@"
     parse_args "$@"
     validate_runtime_options
     if [[ "$LIST_STEPS" -eq 1 ]]; then
