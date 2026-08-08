@@ -80,7 +80,7 @@ if bash bootstrap.sh --dry-run --config "$bad_config" >"$tmp_dir/bad.log" 2>&1; 
     echo "unknown config key was accepted" >&2
     exit 1
 fi
-grep -Fq '未知配置项' "$tmp_dir/bad.log"
+grep -Fq 'Unknown configuration key' "$tmp_dir/bad.log"
 
 marker="$tmp_dir/should-not-exist"
 printf 'BOOTSTRAP_HOSTNAME=$(touch %s)\n' "$marker" >"$tmp_dir/literal.conf"

@@ -368,7 +368,7 @@ load_config() {
         return 0
     fi
     if [[ ! -r "$CONFIG_FILE" ]]; then
-        error "配置文件不可读: $CONFIG_FILE"
+        error "$(msg "Cannot read configuration file: $CONFIG_FILE" "配置文件不可读: $CONFIG_FILE")"
         exit 1
     fi
     while IFS= read -r raw || [[ -n "$raw" ]]; do
@@ -380,14 +380,14 @@ load_config() {
             line="$(trim "${BASH_REMATCH[1]}")"
         fi
         if [[ ! "$line" =~ ^(BOOTSTRAP_[A-Za-z0-9_]+)=(.*)$ ]]; then
-            error "配置文件第 $line_no 行格式不支持，只允许 BOOTSTRAP_KEY=value"
+            error "$(msg "Unsupported format on configuration line $line_no; expected BOOTSTRAP_KEY=value" "配置文件第 $line_no 行格式不支持，只允许 BOOTSTRAP_KEY=value")"
             exit 1
         fi
         key="${BASH_REMATCH[1]}"
         value="$(trim "${BASH_REMATCH[2]}")"
         value="$(strip_optional_quotes "$value")"
         if ! is_allowed_config_key "$key"; then
-            error "配置文件第 $line_no 行包含未知配置项: $key"
+            error "$(msg "Unknown configuration key on line $line_no: $key" "配置文件第 $line_no 行包含未知配置项: $key")"
             exit 1
         fi
         printf -v "$key" "%s" "$value"
@@ -399,7 +399,7 @@ check_root() {
         return 0
     fi
     if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-        error "此脚本必须以 root 权限运行，请使用 sudo"
+        error "$(msg "This script requires root privileges; use sudo" "此脚本必须以 root 权限运行，请使用 sudo")"
         exit 1
     fi
 }
@@ -409,18 +409,18 @@ check_supported_system() {
         return 0
     fi
     if ! command -v apt-get >/dev/null 2>&1; then
-        error "未找到 apt-get；此脚本仅支持 Debian/Ubuntu 系统"
+        error "$(msg "apt-get was not found; this script supports Debian/Ubuntu only" "未找到 apt-get；此脚本仅支持 Debian/Ubuntu 系统")"
         exit 1
     fi
     if ! command -v systemctl >/dev/null 2>&1; then
-        error "未找到 systemctl；此脚本需要 systemd 环境"
+        error "$(msg "systemctl was not found; this script requires systemd" "未找到 systemctl；此脚本需要 systemd 环境")"
         exit 1
     fi
     parse_os_release
     case "$OS_ID" in
         debian | ubuntu) ;;
         *)
-            error "当前系统不是 Debian/Ubuntu: ${OS_ID:-unknown}"
+            error "$(msg "This system is not Debian/Ubuntu: ${OS_ID:-unknown}" "当前系统不是 Debian/Ubuntu: ${OS_ID:-unknown}")"
             exit 1
             ;;
     esac
@@ -437,7 +437,7 @@ echo_banner() {
 ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝
 
 EOF
-    echo "              通用服务器初始化脚本 v${SCRIPT_VERSION}"
+    echo "$(msg "              Server bootstrap v${SCRIPT_VERSION}" "              通用服务器初始化脚本 v${SCRIPT_VERSION}")"
 }
 
 quote_cmd() {
@@ -476,11 +476,11 @@ setup_log() {
 show_command_failure() {
     local description="$1"
     local status="$2"
-    error "${description} 失败（退出码 ${status}）"
+    error "$(msg "${description} failed (exit code ${status})" "${description} 失败（退出码 ${status}）")"
     if [[ "$LOG_READY" -eq 1 ]]; then
-        warn "完整输出: $LOG_FILE"
+        warn "$(msg "Full output: $LOG_FILE" "完整输出: $LOG_FILE")"
         if [[ "$VERBOSE" -eq 0 ]]; then
-            echo "----- 最近日志 -----" >&2
+            echo "$(msg "----- Recent log output -----" "----- 最近日志 -----")" >&2
             tail -n 12 "$LOG_FILE" >&2 || true
             echo "--------------------" >&2
         fi
@@ -527,7 +527,7 @@ run_interactive_cmd() {
     ret=$?
     if [[ "$ret" -ne 0 ]]; then
         log_event "FAIL ($ret) $description"
-        error "${description} 失败（退出码 ${ret}）"
+        error "$(msg "${description} failed (exit code ${ret})" "${description} 失败（退出码 ${ret}）")"
         return "$ret"
     fi
     log_event "OK $description"
@@ -537,7 +537,7 @@ confirm() {
     local msg="$1"
     local answer
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 自动确认: $msg"
+        info "$(msg "[dry-run] Automatically confirming: $msg" "[dry-run] 自动确认: $msg")"
         return 0
     fi
     if [[ "$AUTO_YES" -eq 1 ]]; then
@@ -558,7 +558,7 @@ prompt_input() {
     local default="${2:-}"
     local input
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 将询问: $description${default:+，默认值: $default}"
+        info "$(msg "[dry-run] Would ask: $description${default:+, default: $default}" "[dry-run] 将询问: $description${default:+，默认值: $default}")"
         echo "$default"
         return 0
     fi
@@ -568,9 +568,9 @@ prompt_input() {
     fi
     echo -ne "${COLOR_BOLD}  $description${COLOR_RESET}" >&2
     if [[ -n "$default" ]]; then
-        echo -ne "\n  (直接回车使用默认值: $default, 输入 n 跳过): " >&2
+        echo -ne "$(msg "\n  (Press Enter for the default: $default, or n to skip): " "\n  (直接回车使用默认值: $default, 输入 n 跳过): ")" >&2
     else
-        echo -ne "\n  (直接回车跳过): " >&2
+        echo -ne "$(msg "\n  (Press Enter to skip): " "\n  (直接回车跳过): ")" >&2
     fi
     read -r input </dev/tty
     if [[ "$input" == "n" || "$input" == "N" ]]; then
@@ -587,7 +587,7 @@ prompt_secret() {
     local default="${2:-}"
     local input
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 将询问敏感值: $description"
+        info "$(msg "[dry-run] Would ask for a secret: $description" "[dry-run] 将询问敏感值: $description")"
         echo "DRY_RUN_SECRET"
         return 0
     fi
@@ -599,7 +599,7 @@ prompt_secret() {
         echo ""
         return 0
     fi
-    echo -ne "${COLOR_BOLD}  $description${COLOR_RESET}\n  (输入内容不会显示，直接回车跳过): " >&2
+    echo -ne "$(msg "${COLOR_BOLD}  $description${COLOR_RESET}\n  (Input is hidden; press Enter to skip): " "${COLOR_BOLD}  $description${COLOR_RESET}\n  (输入内容不会显示，直接回车跳过): ")" >&2
     read -r -s input </dev/tty
     echo "" >&2
     echo "$input"
@@ -687,91 +687,91 @@ validate_timezone() {
 
 validate_runtime_options() {
     if [[ "$RESUME" -eq 1 && "$RESET_STATE" -eq 1 ]]; then
-        error "--resume 与 --reset-state 不能同时使用"
+        error "$(msg "--resume and --reset-state cannot be used together" "--resume 与 --reset-state 不能同时使用")"
         exit 1
     fi
     if [[ "$DRY_RUN" -eq 1 && "$RESUME" -eq 1 ]]; then
-        error "--dry-run 不读取续跑状态；请移除 --resume"
+        error "$(msg "--dry-run does not load resume state; remove --resume" "--dry-run 不读取续跑状态；请移除 --resume")"
         exit 1
     fi
     if [[ "$DRY_RUN" -eq 1 && "$RESET_STATE" -eq 1 ]]; then
-        error "--dry-run 不写状态；请移除 --reset-state"
+        error "$(msg "--dry-run does not write state; remove --reset-state" "--dry-run 不写状态；请移除 --reset-state")"
         exit 1
     fi
     if [[ "$SHOW_STATUS" -eq 1 && ( "$RESUME" -eq 1 || "$RESET_STATE" -eq 1 || "$DRY_RUN" -eq 1 ) ]]; then
-        error "--status 不能与 --resume、--reset-state 或 --dry-run 同时使用"
+        error "$(msg "--status cannot be combined with --resume, --reset-state, or --dry-run" "--status 不能与 --resume、--reset-state 或 --dry-run 同时使用")"
         exit 1
     fi
     if ! validate_absolute_path "$STATE_FILE"; then
-        error "--state-file 必须是无换行的绝对路径: $STATE_FILE"
+        error "$(msg "--state-file must be an absolute path without newlines: $STATE_FILE" "--state-file 必须是无换行的绝对路径: $STATE_FILE")"
         exit 1
     fi
     if ! validate_absolute_path "$LOG_FILE"; then
-        error "--log-file 必须是无换行的绝对路径: $LOG_FILE"
+        error "$(msg "--log-file must be an absolute path without newlines: $LOG_FILE" "--log-file 必须是无换行的绝对路径: $LOG_FILE")"
         exit 1
     fi
 }
 
 validate_config_values() {
     if [[ -n "$BOOTSTRAP_HOSTNAME" ]] && ! validate_hostname "$BOOTSTRAP_HOSTNAME"; then
-        error "BOOTSTRAP_HOSTNAME 不合法: $BOOTSTRAP_HOSTNAME"
+        error "$(msg "Invalid BOOTSTRAP_HOSTNAME: $BOOTSTRAP_HOSTNAME" "BOOTSTRAP_HOSTNAME 不合法: $BOOTSTRAP_HOSTNAME")"
         exit 1
     fi
     if ! validate_timezone "$BOOTSTRAP_TIMEZONE"; then
-        error "BOOTSTRAP_TIMEZONE 不合法或系统不支持: $BOOTSTRAP_TIMEZONE"
+        error "$(msg "Invalid or unsupported BOOTSTRAP_TIMEZONE: $BOOTSTRAP_TIMEZONE" "BOOTSTRAP_TIMEZONE 不合法或系统不支持: $BOOTSTRAP_TIMEZONE")"
         exit 1
     fi
     if [[ -n "$BOOTSTRAP_SSH_PORT" ]] && ! validate_port "$BOOTSTRAP_SSH_PORT"; then
-        error "BOOTSTRAP_SSH_PORT 不合法: $BOOTSTRAP_SSH_PORT"
+        error "$(msg "Invalid BOOTSTRAP_SSH_PORT: $BOOTSTRAP_SSH_PORT" "BOOTSTRAP_SSH_PORT 不合法: $BOOTSTRAP_SSH_PORT")"
         exit 1
     fi
     if ! validate_port "$BOOTSTRAP_OLD_SSH_PORT"; then
-        error "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT"
+        error "$(msg "Invalid BOOTSTRAP_OLD_SSH_PORT: $BOOTSTRAP_OLD_SSH_PORT" "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT")"
         exit 1
     fi
     if ! validate_bool "$BOOTSTRAP_KEEP_OLD_SSH_PORT" || ! validate_bool "$BOOTSTRAP_NEZHA_TLS"; then
-        error "BOOTSTRAP_KEEP_OLD_SSH_PORT 和 BOOTSTRAP_NEZHA_TLS 只能是 true 或 false"
+        error "$(msg "BOOTSTRAP_KEEP_OLD_SSH_PORT and BOOTSTRAP_NEZHA_TLS must be true or false" "BOOTSTRAP_KEEP_OLD_SSH_PORT 和 BOOTSTRAP_NEZHA_TLS 只能是 true 或 false")"
         exit 1
     fi
     if [[ -n "$BOOTSTRAP_NEZHA_SERVER" ]] && ! validate_host_port "$BOOTSTRAP_NEZHA_SERVER"; then
-        error "BOOTSTRAP_NEZHA_SERVER 必须使用 host:port 格式"
+        error "$(msg "BOOTSTRAP_NEZHA_SERVER must use host:port format" "BOOTSTRAP_NEZHA_SERVER 必须使用 host:port 格式")"
         exit 1
     fi
     if ! validate_swap_size "$BOOTSTRAP_SWAP_SIZE"; then
-        error "BOOTSTRAP_SWAP_SIZE 必须是 1G、512M 这类大小，或 none"
+        error "$(msg "BOOTSTRAP_SWAP_SIZE must be a size such as 1G or 512M, or none" "BOOTSTRAP_SWAP_SIZE 必须是 1G、512M 这类大小，或 none")"
         exit 1
     fi
     if ! validate_percent "$BOOTSTRAP_ZRAM_PERCENT"; then
-        error "BOOTSTRAP_ZRAM_PERCENT 必须是 0-100 的整数"
+        error "$(msg "BOOTSTRAP_ZRAM_PERCENT must be an integer from 0 to 100" "BOOTSTRAP_ZRAM_PERCENT 必须是 0-100 的整数")"
         exit 1
     fi
     if ! validate_zram_algo "$BOOTSTRAP_ZRAM_ALGO"; then
-        error "BOOTSTRAP_ZRAM_ALGO 仅支持 lz4、lzo、zstd"
+        error "$(msg "BOOTSTRAP_ZRAM_ALGO must be lz4, lzo, or zstd" "BOOTSTRAP_ZRAM_ALGO 仅支持 lz4、lzo、zstd")"
         exit 1
     fi
     if ! validate_integer_range "$BOOTSTRAP_SWAP_PRIORITY" 0 32767 || \
         ! validate_integer_range "$BOOTSTRAP_ZRAM_PRIORITY" 0 32767; then
-        error "Swap/ZRam 优先级必须是 0-32767 的整数"
+        error "$(msg "Swap/ZRam priorities must be integers from 0 to 32767" "Swap/ZRam 优先级必须是 0-32767 的整数")"
         exit 1
     fi
     if ! validate_integer_range "$BOOTSTRAP_SWAPPINESS" 0 200; then
-        error "BOOTSTRAP_SWAPPINESS 必须是 0-200 的整数"
+        error "$(msg "BOOTSTRAP_SWAPPINESS must be an integer from 0 to 200" "BOOTSTRAP_SWAPPINESS 必须是 0-200 的整数")"
         exit 1
     fi
     if ! validate_integer_range "$BOOTSTRAP_VFS_CACHE_PRESSURE" 0 1000; then
-        error "BOOTSTRAP_VFS_CACHE_PRESSURE 必须是 0-1000 的整数"
+        error "$(msg "BOOTSTRAP_VFS_CACHE_PRESSURE must be an integer from 0 to 1000" "BOOTSTRAP_VFS_CACHE_PRESSURE 必须是 0-1000 的整数")"
         exit 1
     fi
     if ! validate_network_profile "$BOOTSTRAP_NETWORK_PROFILE"; then
-        error "BOOTSTRAP_NETWORK_PROFILE 仅支持 minimal、standard、low-memory"
+        error "$(msg "BOOTSTRAP_NETWORK_PROFILE must be minimal, standard, or low-memory" "BOOTSTRAP_NETWORK_PROFILE 仅支持 minimal、standard、low-memory")"
         exit 1
     fi
     if [[ -n "${BOOTSTRAP_SSH_PUBLIC_KEY:-}" && -n "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}" ]]; then
-        error "BOOTSTRAP_SSH_PUBLIC_KEY 与 BOOTSTRAP_SSH_PUBLIC_KEY_FILE 只能设置一个"
+        error "$(msg "Set either BOOTSTRAP_SSH_PUBLIC_KEY or BOOTSTRAP_SSH_PUBLIC_KEY_FILE, not both" "BOOTSTRAP_SSH_PUBLIC_KEY 与 BOOTSTRAP_SSH_PUBLIC_KEY_FILE 只能设置一个")"
         exit 1
     fi
     if [[ -n "${BOOTSTRAP_SSH_PUBLIC_KEY_FILE:-}" && ! -r "$BOOTSTRAP_SSH_PUBLIC_KEY_FILE" ]]; then
-        error "SSH 公钥文件不可读: $BOOTSTRAP_SSH_PUBLIC_KEY_FILE"
+        error "$(msg "Cannot read SSH public-key file: $BOOTSTRAP_SSH_PUBLIC_KEY_FILE" "SSH 公钥文件不可读: $BOOTSTRAP_SSH_PUBLIC_KEY_FILE")"
         exit 1
     fi
 }
@@ -820,7 +820,7 @@ backup_file() {
     fi
     backup="$BACKUP_DIR/$(basename "$file").$(date +%Y%m%d-%H%M%S).$$.$RANDOM"
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 备份 $file 到 $backup"
+        info "$(msg "[dry-run] Back up $file to $backup" "[dry-run] 备份 $file 到 $backup")"
         echo "$backup"
         return 0
     fi
@@ -834,11 +834,11 @@ restore_file_from_backup() {
     local backup="$2"
     if [[ -n "$backup" && -f "$backup" ]]; then
         cp -a "$backup" "$target" && return 0
-        warn "无法从备份恢复 ${target}，请手动检查: $backup"
+        warn "$(msg "Cannot restore ${target} from backup; check manually: $backup" "无法从备份恢复 ${target}，请手动检查: $backup")"
         return 1
     else
         rm -f "$target" && return 0
-        warn "无法移除 ${target}，请手动检查"
+        warn "$(msg "Cannot remove ${target}; check manually" "无法移除 ${target}，请手动检查")"
         return 1
     fi
 }
@@ -847,11 +847,11 @@ download_file() {
     local url="$1"
     local output="$2"
     if [[ ! "$url" =~ ^https:// ]]; then
-        error "仅允许通过 HTTPS 下载: $url"
+        error "$(msg "Downloads require HTTPS: $url" "仅允许通过 HTTPS 下载: $url")"
         return 1
     fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 下载 $url 到 $output"
+        info "$(msg "[dry-run] Download $url to $output" "[dry-run] 下载 $url 到 $output")"
         return 0
     fi
     curl --fail --location --silent --show-error --retry 3 --proto '=https' --tlsv1.2 \
@@ -884,16 +884,16 @@ validate_step_list() {
     for item in "${items[@]}"; do
         item="${item//[[:space:]]/}"
         if [[ -z "$item" ]]; then
-            error "$option_name 包含空步骤"
+            error "$(msg "$option_name contains an empty step" "$option_name 包含空步骤")"
             exit 1
         fi
         if [[ ! "$item" =~ ^[0-9]+$ ]]; then
-            error "$option_name 包含非法步骤: $item"
+            error "$(msg "$option_name contains an invalid step: $item" "$option_name 包含非法步骤: $item")"
             exit 1
         fi
         number=$((10#$item))
         if ((number < 1 || number > MAX_STEP)); then
-            error "$option_name 只能指定 01-${max_step_padded} 之间的步骤: $item"
+            error "$(msg "$option_name requires steps from 01 to ${max_step_padded}: $item" "$option_name 只能指定 01-${max_step_padded} 之间的步骤: $item")"
             exit 1
         fi
     done
@@ -1318,7 +1318,7 @@ run_step() {
 }
 
 apt_install() {
-    run_cmd "安装软件包: $*" apt-get install -y "$@"
+    run_cmd "$(msg "Install packages: $*" "安装软件包: $*")" apt-get install -y "$@"
 }
 
 write_file() {
@@ -1327,7 +1327,7 @@ write_file() {
     local content="$3"
     local tmp
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 写入 $path"
+        info "$(msg "[dry-run] Write $path" "[dry-run] 写入 $path")"
         return 0
     fi
     ensure_dir "$(dirname "$path")" 0755 || return 1
@@ -1351,7 +1351,7 @@ replace_file_block() {
     local tmp
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 更新 $path 中的 bootstrap 配置块"
+        info "$(msg "[dry-run] Update the bootstrap configuration block in $path" "[dry-run] 更新 $path 中的 bootstrap 配置块")"
         return 0
     fi
 
@@ -1632,7 +1632,7 @@ step_06_ufw() {
         return 1
     fi
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" ]] && ! validate_port "$BOOTSTRAP_OLD_SSH_PORT"; then
-        error "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT"
+        error "$(msg "Invalid BOOTSTRAP_OLD_SSH_PORT: $BOOTSTRAP_OLD_SSH_PORT" "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT")"
         return 1
     fi
     if ! confirm "安装并启用 UFW，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp"; then
