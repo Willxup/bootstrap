@@ -16,6 +16,9 @@ SKIP_STEPS=""
 set_defaults
 
 RUN_FINGERPRINT="$(configuration_fingerprint)"
+UI_LANG=zh
+[[ "$(configuration_fingerprint)" == "$RUN_FINGERPRINT" ]]
+UI_LANG=en
 initialize_state
 add_completed_step "04"
 write_state
@@ -28,15 +31,18 @@ if ! contains_step "$COMPLETED_STEPS" "04"; then
 fi
 
 status_output="$(bash bootstrap.sh --status --state-file "$STATE_FILE")"
-printf '%s\n' "$status_output" | grep -Fq '状态: running'
-printf '%s\n' "$status_output" | grep -Fq '04  完成'
+printf '%s\n' "$status_output" | grep -Fq 'Status: running'
+printf '%s\n' "$status_output" | grep -Fq '04  Completed'
+zh_status="$(bash bootstrap.sh --status --state-file "$STATE_FILE" --lang zh)"
+printf '%s\n' "$zh_status" | grep -Fq '状态: running'
+printf '%s\n' "$zh_status" | grep -Fq '04  完成'
 
 BOOTSTRAP_NETWORK_PROFILE=standard
 if ! prepare_state >"$tmp_dir/mismatch.log" 2>&1; then
     echo "changed configuration could not resume" >&2
     exit 1
 fi
-grep -Fq '当前配置或脚本版本与检查点不同' "$tmp_dir/mismatch.log"
+grep -Fq 'The current configuration or script version differs from the checkpoint' "$tmp_dir/mismatch.log"
 if ! contains_step "$COMPLETED_STEPS" "04"; then
     echo "completed step was lost after config change" >&2
     exit 1
@@ -82,8 +88,8 @@ if contains_step "$COMPLETED_STEPS" "17"; then
     echo "legacy NodeQuality completion was not reset for final retest" >&2
     exit 1
 fi
-grep -Fq '已将步骤编号自动迁移到 v3.1' "$tmp_dir/migration.log"
-grep -Fq '将在剩余配置完成后重新测试' "$tmp_dir/migration.log"
+grep -Fq 'step numbers were automatically migrated to v3.1' "$tmp_dir/migration.log"
+grep -Fq 'it will run again after the remaining configuration' "$tmp_dir/migration.log"
 
 flow_state="$tmp_dir/flow.state"
 set +e
@@ -98,8 +104,8 @@ TEST_STATE_FILE="$flow_state" TEST_LOG_FILE="$tmp_dir/flow.log" bash -c '
     initialize_state
     step_ok() { return 0; }
     step_fail() { return 9; }
-    run_step "01" "测试成功" step_ok
-    run_step "02" "测试失败" step_fail
+    run_step "01" step_ok
+    run_step "02" step_fail
 ' >"$tmp_dir/flow-first.log" 2>&1
 flow_ret=$?
 set -e
@@ -117,17 +123,18 @@ TEST_STATE_FILE="$flow_state" TEST_LOG_FILE="$tmp_dir/flow.log" bash -c '
     set_defaults
     RESUME=1
     prepare_state
+    select_language --lang zh
     must_not_run() { return 77; }
     step_ok() { return 0; }
-    run_step "01" "应跳过" must_not_run
-    run_step "02" "重试成功" step_ok
+    run_step "01" must_not_run
+    run_step "02" step_ok
     RUN_STATUS="complete"
     write_state
 ' >"$tmp_dir/flow-resume.log" 2>&1
 
 flow_status="$(bash bootstrap.sh --status --state-file "$flow_state")"
-printf '%s\n' "$flow_status" | grep -Fq '状态: complete'
-printf '%s\n' "$flow_status" | grep -Fq '01  完成'
-printf '%s\n' "$flow_status" | grep -Fq '02  完成'
+printf '%s\n' "$flow_status" | grep -Fq 'Status: complete'
+printf '%s\n' "$flow_status" | grep -Fq '01  Completed'
+printf '%s\n' "$flow_status" | grep -Fq '02  Completed'
 
 echo "state tests passed"

@@ -58,14 +58,14 @@ bash bootstrap.sh \
     --yes \
     --only 12,16,17 \
     --timezone UTC >"$tmp_dir/order.log" 2>&1
-swap_line="$(grep -n '步骤 12: 配置 Swap & ZRam' "$tmp_dir/order.log" | cut -d: -f1)"
-timesync_line="$(grep -n '步骤 16: 配置时间同步' "$tmp_dir/order.log" | cut -d: -f1)"
-nodequality_line="$(grep -n '步骤 17: 运行 NodeQuality 测试' "$tmp_dir/order.log" | cut -d: -f1)"
+swap_line="$(grep -n 'Step 12: Configure Swap and ZRam' "$tmp_dir/order.log" | cut -d: -f1)"
+timesync_line="$(grep -n 'Step 16: Configure time synchronization' "$tmp_dir/order.log" | cut -d: -f1)"
+nodequality_line="$(grep -n 'Step 17: Run NodeQuality' "$tmp_dir/order.log" | cut -d: -f1)"
 if ! ((swap_line < timesync_line && timesync_line < nodequality_line)); then
     echo "NodeQuality is not the final step" >&2
     exit 1
 fi
-grep -Fq '17  运行 NodeQuality' < <(bash bootstrap.sh --list-steps)
+grep -Fq '17  Run NodeQuality' < <(bash bootstrap.sh --list-steps)
 
 bash bootstrap.sh \
     --dry-run \

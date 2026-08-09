@@ -468,7 +468,7 @@ setup_log() {
     chmod 0600 "$LOG_FILE" || return 1
     LOG_READY=1
     {
-        printf "\n[%s] ===== bootstrap v%s 开始 =====\n" "$(timestamp_utc)" "$SCRIPT_VERSION"
+        printf "\n[%s] ===== bootstrap v%s %s =====\n" "$(timestamp_utc)" "$SCRIPT_VERSION" "$(msg started 开始)"
         printf "state_file=%s\n" "$STATE_FILE"
     } >>"$LOG_FILE"
 }
@@ -917,24 +917,24 @@ should_run_step() {
 
 step_name() {
     case "$1" in
-        01) echo "更新系统" ;;
-        02) echo "安装基础工具" ;;
-        03) echo "修改 root 密码" ;;
-        04) echo "修改主机名" ;;
-        05) echo "修改 SSH 端口" ;;
-        06) echo "启用 UFW 防火墙" ;;
-        07) echo "添加 SSH 公钥" ;;
-        08) echo "配置 Profile" ;;
-        09) echo "安装哪吒探针" ;;
-        10) echo "配置网络参数" ;;
-        11) echo "禁用 IPv6（含 UFW）" ;;
-        12) echo "配置 Swap 与 ZRam" ;;
-        13) echo "安装 CrowdSec" ;;
-        14) echo "安装 Docker" ;;
-        15) echo "配置 Vim" ;;
-        16) echo "配置时间同步" ;;
-        17) echo "运行 NodeQuality" ;;
-        *) echo "未知步骤" ;;
+        01) msg "Update the system" "更新系统" ;;
+        02) msg "Install essential tools" "安装基础工具" ;;
+        03) msg "Change the root password" "修改 root 密码" ;;
+        04) msg "Set the hostname" "修改主机名" ;;
+        05) msg "Change the SSH port" "修改 SSH 端口" ;;
+        06) msg "Enable the UFW firewall" "启用 UFW 防火墙" ;;
+        07) msg "Add SSH public keys" "添加 SSH 公钥" ;;
+        08) msg "Configure the shell profile" "配置 Profile" ;;
+        09) msg "Install the Nezha agent" "安装哪吒探针" ;;
+        10) msg "Configure network settings" "配置网络参数" ;;
+        11) msg "Disable IPv6 (including UFW)" "禁用 IPv6（含 UFW）" ;;
+        12) msg "Configure Swap and ZRam" "配置 Swap 与 ZRam" ;;
+        13) msg "Install CrowdSec" "安装 CrowdSec" ;;
+        14) msg "Install Docker" "安装 Docker" ;;
+        15) msg "Configure Vim" "配置 Vim" ;;
+        16) msg "Configure time synchronization" "配置时间同步" ;;
+        17) msg "Run NodeQuality" "运行 NodeQuality" ;;
+        *) msg "Unknown step" "未知步骤" ;;
     esac
 }
 
@@ -953,7 +953,7 @@ hash_stdin() {
     elif command -v shasum >/dev/null 2>&1; then
         shasum -a 256 | awk '{print $1}'
     else
-        error "缺少 sha256sum 或 shasum，无法生成续跑配置指纹"
+        error "$(msg "sha256sum or shasum is required to fingerprint the resume configuration" "缺少 sha256sum 或 shasum，无法生成续跑配置指纹")"
         return 1
     fi
 }
@@ -1066,10 +1066,10 @@ migrate_loaded_state_steps() {
     fi
     if [[ "$RUN_STATUS" != "complete" ]] && contains_step "$COMPLETED_STEPS" "17"; then
         COMPLETED_STEPS="$(remove_step_from_list "$COMPLETED_STEPS" "17")" || return 1
-        warn "旧 NodeQuality 完成标记已重置，将在剩余配置完成后重新测试"
+        warn "$(msg "The old NodeQuality completion flag was reset; it will run again after the remaining configuration" "旧 NodeQuality 完成标记已重置，将在剩余配置完成后重新测试")"
     fi
     STATE_LAYOUT_MIGRATED=1
-    warn "检测到 v3.0.x 检查点，已将步骤编号自动迁移到 v3.1"
+    warn "$(msg "Detected a v3.0.x checkpoint; step numbers were automatically migrated to v3.1" "检测到 v3.0.x 检查点，已将步骤编号自动迁移到 v3.1")"
 }
 
 write_state() {
@@ -1104,7 +1104,7 @@ write_state() {
 load_state() {
     local key value state_version="" stored_log_file=""
     [[ -r "$STATE_FILE" ]] || {
-        error "没有可读取的检查点: $STATE_FILE"
+        error "$(msg "No readable checkpoint: $STATE_FILE" "没有可读取的检查点: $STATE_FILE")"
         return 1
     }
 
@@ -1136,12 +1136,12 @@ load_state() {
     done <"$STATE_FILE"
 
     if [[ "$state_version" != "1" || -z "$STATE_SCRIPT_VERSION" || ! "$STATE_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
-        error "检查点格式无效: $STATE_FILE"
+        error "$(msg "Invalid checkpoint format: $STATE_FILE" "检查点格式无效: $STATE_FILE")"
         return 1
     fi
     STATE_LOG_FILE="$stored_log_file"
     migrate_loaded_state_steps || {
-        error "旧检查点步骤编号迁移失败: $STATE_FILE"
+        error "$(msg "Failed to migrate legacy checkpoint step numbers: $STATE_FILE" "旧检查点步骤编号迁移失败: $STATE_FILE")"
         return 1
     }
     return 0
@@ -1166,15 +1166,15 @@ prepare_state() {
     if [[ "$RESUME" -eq 1 ]]; then
         load_state || return 1
         if [[ "$STATE_FINGERPRINT" != "$current_fingerprint" ]]; then
-            warn "当前配置或脚本版本与检查点不同"
-            warn "已完成步骤仍会跳过；新配置只影响失败和待执行步骤，原步骤选择保持不变"
+            warn "$(msg "The current configuration or script version differs from the checkpoint" "当前配置或脚本版本与检查点不同")"
+            warn "$(msg "Completed steps will still be skipped; new settings affect only failed and pending steps, and the original step selection is retained" "已完成步骤仍会跳过；新配置只影响失败和待执行步骤，原步骤选择保持不变")"
         fi
         ONLY_STEPS="$STATE_ONLY_STEPS"
         SKIP_STEPS="$STATE_SKIP_STEPS"
         RUN_FINGERPRINT="$(configuration_fingerprint)" || return 1
         STATE_ENABLED=1
         if [[ "$RUN_STATUS" == "complete" ]]; then
-            success "检查点显示本轮已经完成，无需续跑"
+            success "$(msg "The checkpoint shows this run is complete; nothing to resume" "检查点显示本轮已经完成，无需续跑")"
             return 2
         fi
         RUN_STATUS="running"
@@ -1188,12 +1188,12 @@ prepare_state() {
         if load_state; then
             previous_status="$RUN_STATUS"
             if [[ "$previous_status" != "complete" ]]; then
-                error "发现未完成的检查点（状态: ${previous_status}）"
-                warn "继续执行请加 --resume；放弃旧进度请加 --reset-state"
+                error "$(msg "Found an unfinished checkpoint (status: ${previous_status})" "发现未完成的检查点（状态: ${previous_status}）")"
+                warn "$(msg "Use --resume to continue, or --reset-state to discard the previous progress" "继续执行请加 --resume；放弃旧进度请加 --reset-state")"
                 return 1
             fi
         else
-            warn "旧检查点损坏；请确认后使用 --reset-state 覆盖"
+            warn "$(msg "The old checkpoint is corrupt; review it before overwriting with --reset-state" "旧检查点损坏；请确认后使用 --reset-state 覆盖")"
             return 1
         fi
     fi
@@ -1205,28 +1205,28 @@ prepare_state() {
 print_state_status() {
     local number=1 step label
     load_state || return 1
-    printf "状态: %s\n" "$RUN_STATUS"
-    printf "脚本: %s\n" "$STATE_SCRIPT_VERSION"
-    printf "开始: %s\n" "$RUN_STARTED_AT"
-    printf "日志: %s\n" "${STATE_LOG_FILE:-$LOG_FILE}"
+    printf "%s: %s\n" "$(msg Status 状态)" "$RUN_STATUS"
+    printf "%s: %s\n" "$(msg Script 脚本)" "$STATE_SCRIPT_VERSION"
+    printf "%s: %s\n" "$(msg Started 开始)" "$RUN_STARTED_AT"
+    printf "%s: %s\n" "$(msg Log 日志)" "${STATE_LOG_FILE:-$LOG_FILE}"
     while ((number <= MAX_STEP)); do
         printf -v step "%02d" "$number"
         if contains_step "$COMPLETED_STEPS" "$step"; then
-            label="完成"
+            label="$(msg "Completed" "完成")"
         elif [[ "$step" == "$FAILED_STEP" && "$RUN_STATUS" == "interrupted" ]]; then
-            label="中断"
+            label="$(msg "Interrupted" "中断")"
         elif [[ "$step" == "$FAILED_STEP" ]]; then
-            label="失败"
+            label="$(msg "Failed" "失败")"
         elif [[ "$step" == "$CURRENT_STEP" ]]; then
-            label="中断"
+            label="$(msg "Interrupted" "中断")"
         elif [[ -n "$STATE_ONLY_STEPS" ]] && ! contains_step "$STATE_ONLY_STEPS" "$step"; then
-            label="未选择"
+            label="$(msg "Not selected" "未选择")"
         elif contains_step "$STATE_SKIP_STEPS" "$step"; then
-            label="已排除"
+            label="$(msg "Excluded" "已排除")"
         else
-            label="待执行"
+            label="$(msg "Pending" "待执行")"
         fi
-        printf "%s  %-6s  %s\n" "$step" "$label" "$(step_name "$step")"
+        printf "%s  %-12s  %s\n" "$step" "$label" "$(step_name "$step")"
         number=$((number + 1))
     done
 }
@@ -1241,7 +1241,7 @@ add_completed_step() {
 handle_signal() {
     local signal_name="$1"
     local exit_code="$2"
-    warn "收到 ${signal_name}，已保留检查点"
+    warn "$(msg "Received ${signal_name}; the checkpoint has been preserved" "收到 ${signal_name}，已保留检查点")"
     if [[ "$STATE_ENABLED" -eq 1 ]]; then
         RUN_STATUS="interrupted"
         FAILED_STEP="$CURRENT_STEP"
@@ -1267,30 +1267,30 @@ install_state_traps() {
 
 run_step() {
     local step_num="$1"
-    local step_name="$2"
-    local step_func="$3"
-    local ret
+    local step_func="$2"
+    local step_name ret
+    step_name="$(step_name "$step_num")"
 
     if ! should_run_step "$step_num"; then
-        warn "跳过步骤 ${step_num}: ${step_name}"
+        warn "$(msg "Skipping step ${step_num}: ${step_name}" "跳过步骤 ${step_num}: ${step_name}")"
         return 0
     fi
 
     if [[ "$RESUME" -eq 1 ]] && contains_step "$COMPLETED_STEPS" "$step_num"; then
-        success "步骤 ${step_num} 已完成，续跑时跳过: ${step_name}"
+        success "$(msg "Step ${step_num} is already complete; skipping on resume: ${step_name}" "步骤 ${step_num} 已完成，续跑时跳过: ${step_name}")"
         return 0
     fi
 
     echo "" >&2
     echo -e "${COLOR_BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${COLOR_RESET}" >&2
-    echo -e "${COLOR_BOLD}  步骤 ${step_num}: ${step_name}${COLOR_RESET}" >&2
+    echo -e "$(msg "${COLOR_BOLD}  Step ${step_num}: ${step_name}${COLOR_RESET}" "${COLOR_BOLD}  步骤 ${step_num}: ${step_name}${COLOR_RESET}")" >&2
     echo -e "${COLOR_BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${COLOR_RESET}" >&2
 
     CURRENT_STEP="$step_num"
     FAILED_STEP=""
     RUN_STATUS="running"
     write_state || {
-        error "无法写入检查点，停止执行"
+        error "$(msg "Cannot write the checkpoint; stopping" "无法写入检查点，停止执行")"
         exit 1
     }
     log_event "STEP $step_num START $step_name"
@@ -1301,18 +1301,18 @@ run_step() {
         add_completed_step "$step_num"
         CURRENT_STEP=""
         write_state || {
-            error "步骤成功但无法更新检查点，停止执行"
+            error "$(msg "The step succeeded but the checkpoint could not be updated; stopping" "步骤成功但无法更新检查点，停止执行")"
             exit 1
         }
         log_event "STEP $step_num OK $step_name"
-        success "步骤 ${step_num} 完成"
+        success "$(msg "Step ${step_num} completed" "步骤 ${step_num} 完成")"
     else
         RUN_STATUS="failed"
         FAILED_STEP="$step_num"
         write_state || true
         log_event "STEP $step_num FAIL ($ret) $step_name"
-        error "步骤 ${step_num} 执行失败"
-        warn "修复问题后使用相同参数加 --resume 继续"
+        error "$(msg "Step ${step_num} failed" "步骤 ${step_num} 执行失败")"
+        warn "$(msg "Fix the problem, then use the same arguments with --resume to continue" "修复问题后使用相同参数加 --resume 继续")"
         exit "$ret"
     fi
 }
@@ -2470,7 +2470,7 @@ main() {
     export DEBIAN_FRONTEND=noninteractive
 
     setup_log || {
-        error "无法初始化日志: $LOG_FILE"
+        error "$(msg "Cannot initialize the log: $LOG_FILE" "无法初始化日志: $LOG_FILE")"
         return 1
     }
     if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -2484,38 +2484,38 @@ main() {
         install_state_traps
     fi
 
-    echo -e "\n${COLOR_BOLD}开始服务器初始化...${COLOR_RESET}\n" >&2
-    run_step "01" "更新系统" step_01_update
-    run_step "02" "安装必要软件" step_02_software
-    run_step "03" "修改密码" step_03_password
-    run_step "04" "修改主机名" step_04_hostname
-    run_step "05" "修改 SSH 端口" step_05_ssh_port
-    run_step "06" "启用 UFW 防火墙" step_06_ufw
-    run_step "07" "添加 SSH 公钥" step_07_ssh_keys
-    run_step "08" "配置 Profile" step_08_profile
-    run_step "09" "安装哪吒探针" step_09_nezha
-    run_step "10" "配置网络参数" step_10_bbr
-    run_step "11" "禁用 IPv6（含 UFW）" step_11_ipv6
-    run_step "12" "配置 Swap & ZRam" step_12_swap_zram
-    run_step "13" "安装 CrowdSec" step_13_crowdsec
-    run_step "14" "安装 Docker" step_14_docker
-    run_step "15" "配置 Vim" step_15_vim
-    run_step "16" "配置时间同步" step_16_timesync
-    run_step "17" "运行 NodeQuality 测试" step_17_nodequality
+    echo -e "$(msg "\n${COLOR_BOLD}Starting server bootstrap...${COLOR_RESET}\n" "\n${COLOR_BOLD}开始服务器初始化...${COLOR_RESET}\n")" >&2
+    run_step "01" step_01_update
+    run_step "02" step_02_software
+    run_step "03" step_03_password
+    run_step "04" step_04_hostname
+    run_step "05" step_05_ssh_port
+    run_step "06" step_06_ufw
+    run_step "07" step_07_ssh_keys
+    run_step "08" step_08_profile
+    run_step "09" step_09_nezha
+    run_step "10" step_10_bbr
+    run_step "11" step_11_ipv6
+    run_step "12" step_12_swap_zram
+    run_step "13" step_13_crowdsec
+    run_step "14" step_14_docker
+    run_step "15" step_15_vim
+    run_step "16" step_16_timesync
+    run_step "17" step_17_nodequality
 
     if [[ "$STATE_ENABLED" -eq 1 ]]; then
         RUN_STATUS="complete"
         CURRENT_STEP=""
         FAILED_STEP=""
         write_state || {
-            error "执行完成，但无法写入最终检查点"
+            error "$(msg "Execution finished, but the final checkpoint could not be written" "执行完成，但无法写入最终检查点")"
             return 1
         }
     fi
-    log_event "===== bootstrap v${SCRIPT_VERSION} 完成 ====="
+    log_event "$(msg "===== bootstrap v${SCRIPT_VERSION} complete =====" "===== bootstrap v${SCRIPT_VERSION} 完成 =====")"
 
     echo -e "\n${COLOR_SUCCESS}${COLOR_BOLD}========================================${COLOR_RESET}" >&2
-    echo -e "${COLOR_SUCCESS}${COLOR_BOLD}  所有步骤执行完毕！${COLOR_RESET}" >&2
+    echo -e "$(msg "${COLOR_SUCCESS}${COLOR_BOLD}  All steps finished!${COLOR_RESET}" "${COLOR_SUCCESS}${COLOR_BOLD}  所有步骤执行完毕！${COLOR_RESET}")" >&2
     echo -e "${COLOR_SUCCESS}${COLOR_BOLD}========================================${COLOR_RESET}\n" >&2
 }
 

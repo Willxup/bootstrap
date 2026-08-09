@@ -57,6 +57,12 @@ for language in en zh; do
 done
 grep -Fq 'Would ask:' "$tmp_dir/prompt-en.err"
 grep -Fq '将询问:' "$tmp_dir/prompt-zh.err"
+for language in en zh; do
+    bash bootstrap.sh --list-steps --lang "$language" >"$tmp_dir/steps-$language"
+    [[ "$(wc -l <"$tmp_dir/steps-$language" | tr -d ' ')" == 17 ]]
+done
+grep -Fq '17  Run NodeQuality' "$tmp_dir/steps-en"
+grep -Fq '17  运行 NodeQuality' "$tmp_dir/steps-zh"
 if BOOTSTRAP_LANG=invalid bash bootstrap.sh --help >"$tmp_dir/error" 2>&1; then
     echo 'invalid environment language was accepted' >&2
     exit 1
