@@ -1833,8 +1833,8 @@ NETWORK_LOW_MEMORY_EOF
 
 step_10_bbr() {
     local content current_cc current_qdisc modules_content
-    if ! confirm "应用 ${BOOTSTRAP_NETWORK_PROFILE} 网络参数（BBR + FQ）"; then
-        warn "跳过步骤 10"
+    if ! confirm "$(msg "Apply ${BOOTSTRAP_NETWORK_PROFILE} network settings (BBR + FQ)" "应用 ${BOOTSTRAP_NETWORK_PROFILE} 网络参数（BBR + FQ）")"; then
+        warn "$(msg "Skipping step 10" "跳过步骤 10")"
         return 0
     fi
     content="$(network_profile_content "$BOOTSTRAP_NETWORK_PROFILE")" || return 1
@@ -1847,15 +1847,15 @@ step_10_bbr() {
         modprobe tcp_bbr >>"$LOG_FILE" 2>&1 || true
         modprobe sch_fq >>"$LOG_FILE" 2>&1 || true
     fi
-    run_cmd "应用网络 sysctl 配置" sysctl --load=/etc/sysctl.d/99-bootstrap-bbr.conf || return 1
+    run_cmd "$(msg "Apply network sysctl settings" "应用网络 sysctl 配置")" sysctl --load=/etc/sysctl.d/99-bootstrap-bbr.conf || return 1
     if [[ "$DRY_RUN" -ne 1 ]]; then
         current_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
         current_qdisc="$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
         if [[ "$current_cc" != "bbr" || "$current_qdisc" != "fq" ]]; then
-            error "网络参数验证失败：congestion_control=${current_cc:-unknown}, qdisc=${current_qdisc:-unknown}"
+            error "$(msg "Network settings validation failed: congestion_control=${current_cc:-unknown}, qdisc=${current_qdisc:-unknown}" "网络参数验证失败：congestion_control=${current_cc:-unknown}, qdisc=${current_qdisc:-unknown}")"
             return 1
         fi
-        success "网络配置已生效：profile=${BOOTSTRAP_NETWORK_PROFILE}, BBR + FQ"
+        success "$(msg "Network settings are active: profile=${BOOTSTRAP_NETWORK_PROFILE}, BBR + FQ" "网络配置已生效：profile=${BOOTSTRAP_NETWORK_PROFILE}, BBR + FQ")"
     fi
 }
 
@@ -1864,17 +1864,17 @@ configure_ufw_ipv6_disabled() {
     local backup="" tmp
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 如果 UFW 已安装，设置 /etc/default/ufw: IPV6=no"
-        info "[dry-run] 如果 UFW 已启用，执行 ufw reload 并确认不再显示 (v6) 规则"
+        info "$(msg "[dry-run] If UFW is installed, set /etc/default/ufw: IPV6=no" "[dry-run] 如果 UFW 已安装，设置 /etc/default/ufw: IPV6=no")"
+        info "$(msg "[dry-run] If UFW is active, run ufw reload and verify that no (v6) rules remain" "[dry-run] 如果 UFW 已启用，执行 ufw reload 并确认不再显示 (v6) 规则")"
         return 0
     fi
     if [[ ! -f "$ufw_defaults" ]]; then
-        info "未发现 /etc/default/ufw，跳过 UFW IPv6 联动"
+        info "$(msg "/etc/default/ufw was not found; skipping UFW IPv6 changes" "未发现 /etc/default/ufw，跳过 UFW IPv6 联动")"
         return 0
     fi
 
     if grep -Eq '^[[:space:]]*IPV6[[:space:]]*=[[:space:]]*no[[:space:]]*$' "$ufw_defaults"; then
-        info "UFW 已配置 IPV6=no"
+        info "$(msg "UFW already has IPV6=no" "UFW 已配置 IPV6=no")"
     else
         backup="$(backup_file "$ufw_defaults")" || return 1
         tmp="$(mktemp)" || return 1
@@ -1897,11 +1897,11 @@ configure_ufw_ipv6_disabled() {
             return 1
         fi
         rm -f "$tmp"
-        success "UFW 已设置 IPV6=no"
+        success "$(msg "Set UFW to IPV6=no" "UFW 已设置 IPV6=no")"
     fi
 
     if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -Eq '^Status:[[:space:]]+active'; then
-        if ! run_cmd "重载 UFW 以移除 IPv6 规则" ufw reload; then
+        if ! run_cmd "$(msg "Reload UFW to remove IPv6 rules" "重载 UFW 以移除 IPv6 规则")" ufw reload; then
             if [[ -n "$backup" ]]; then
                 restore_file_from_backup "$ufw_defaults" "$backup"
                 ufw reload >>"$LOG_FILE" 2>&1 || true
@@ -1909,7 +1909,7 @@ configure_ufw_ipv6_disabled() {
             return 1
         fi
         if LC_ALL=C ufw status 2>/dev/null | grep -Fq '(v6)'; then
-            error "UFW 重载后仍显示 (v6) 规则，请检查: ufw status"
+            error "$(msg "UFW still shows (v6) rules after reloading; check: ufw status" "UFW 重载后仍显示 (v6) 规则，请检查: ufw status")"
             return 1
         fi
     fi
@@ -1917,8 +1917,8 @@ configure_ufw_ipv6_disabled() {
 
 step_11_ipv6() {
     local content
-    if ! confirm "禁用 IPv6（可选）"; then
-        warn "跳过步骤 11"
+    if ! confirm "$(msg "Disable IPv6 (optional)" "禁用 IPv6（可选）")"; then
+        warn "$(msg "Skipping step 11" "跳过步骤 11")"
         return 0
     fi
     content=$(cat <<'IPV6_EOF'
@@ -1930,13 +1930,13 @@ IPV6_EOF
     configure_ufw_ipv6_disabled || return 1
     backup_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf >/dev/null || return 1
     write_file /etc/sysctl.d/99-bootstrap-disable-ipv6.conf 0644 "$content" || return 1
-    run_cmd "应用 IPv6 sysctl 配置" sysctl --load=/etc/sysctl.d/99-bootstrap-disable-ipv6.conf || return 1
+    run_cmd "$(msg "Apply IPv6 sysctl settings" "应用 IPv6 sysctl 配置")" sysctl --load=/etc/sysctl.d/99-bootstrap-disable-ipv6.conf || return 1
 }
 
 step_17_nodequality() {
     local tmp ret
-    if ! confirm "运行 NodeQuality 延迟测试（会下载官方测试脚本）"; then
-        warn "跳过步骤 17"
+    if ! confirm "$(msg "Run the NodeQuality latency test (downloads the official test script)" "运行 NodeQuality 延迟测试（会下载官方测试脚本）")"; then
+        warn "$(msg "Skipping step 17" "跳过步骤 17")"
         return 0
     fi
     apt_install curl || return 1
@@ -1951,7 +1951,7 @@ step_17_nodequality() {
         rm -f "$tmp"
         return 1
     }
-    run_interactive_cmd "运行 NodeQuality 测试" bash "$tmp"
+    run_interactive_cmd "$(msg "Run the NodeQuality test" "运行 NodeQuality 测试")" bash "$tmp"
     ret=$?
     rm -f "$tmp"
     return "$ret"
@@ -2011,7 +2011,7 @@ configure_swapfile() {
     local count_mb target_bytes current_bytes current_priority old_was_active=0
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 确保 $swap_size /swapfile（priority=${priority}）并写入 /etc/fstab"
+        info "$(msg "[dry-run] Ensure $swap_size /swapfile (priority=${priority}) and add it to /etc/fstab" "[dry-run] 确保 $swap_size /swapfile（priority=${priority}）并写入 /etc/fstab")"
         return 0
     fi
 
@@ -2020,17 +2020,17 @@ configure_swapfile() {
     if [[ "$current_bytes" == "$target_bytes" ]]; then
         current_priority="$(awk '$1 == "/swapfile" { print $5 }' /proc/swaps 2>/dev/null || true)"
         if [[ -z "$current_priority" ]]; then
-            run_cmd "启用现有 swapfile" swapon -p "$priority" /swapfile || return 1
+            run_cmd "$(msg "Enable the existing swapfile" "启用现有 swapfile")" swapon -p "$priority" /swapfile || return 1
         elif [[ "$current_priority" != "$priority" ]]; then
-            run_cmd "停用 swapfile 以更新优先级" swapoff /swapfile || return 1
-            if ! run_cmd "按优先级 $priority 重新启用 swapfile" swapon -p "$priority" /swapfile; then
-                warn "新优先级启用失败，尝试恢复优先级 $current_priority"
+            run_cmd "$(msg "Deactivate the swapfile to update its priority" "停用 swapfile 以更新优先级")" swapoff /swapfile || return 1
+            if ! run_cmd "$(msg "Reactivate the swapfile with priority $priority" "按优先级 $priority 重新启用 swapfile")" swapon -p "$priority" /swapfile; then
+                warn "$(msg "Activation with the new priority failed; trying to restore priority $current_priority" "新优先级启用失败，尝试恢复优先级 $current_priority")"
                 swapon -p "$current_priority" /swapfile >>"$LOG_FILE" 2>&1 || true
                 return 1
             fi
         fi
         ensure_swap_fstab_entry "$priority" || return 1
-        info "现有 /swapfile 大小正确，已复用"
+        info "$(msg "Reusing the existing /swapfile with the requested size" "现有 /swapfile 大小正确，已复用")"
         return 0
     fi
 
@@ -2073,7 +2073,7 @@ configure_swapfile() {
         return 1
     fi
     if ! swapon -p "$priority" /swapfile; then
-        warn "新 swapfile 启用失败，尝试恢复旧文件"
+        warn "$(msg "The new swapfile failed to activate; trying to restore the old file" "新 swapfile 启用失败，尝试恢复旧文件")"
         swapoff /swapfile 2>/dev/null || true
         rm -f /swapfile
         if [[ -n "$old_swap_backup" && -e "$old_swap_backup" ]]; then
@@ -2093,7 +2093,7 @@ configure_swapfile() {
         return 1
     fi
     if [[ -n "$old_swap_backup" ]]; then
-        warn "旧 swapfile 已保留为: $old_swap_backup"
+        warn "$(msg "The old swapfile was preserved at: $old_swap_backup" "旧 swapfile 已保留为: $old_swap_backup")"
     fi
 }
 
@@ -2102,62 +2102,62 @@ restart_zramswap_safely() {
     local device="/dev/zram0"
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] stop zramswap；确认 /dev/zram0 未挂载；必要时 swapoff + reset；再 start"
+        info "$(msg "[dry-run] Stop zramswap; verify /dev/zram0 is not mounted; swapoff + reset if needed; then start" "[dry-run] stop zramswap；确认 /dev/zram0 未挂载；必要时 swapoff + reset；再 start")"
         return 0
     fi
 
-    run_cmd "设置 zramswap 开机启动" systemctl enable zramswap.service || return 1
+    run_cmd "$(msg "Enable zramswap at boot" "设置 zramswap 开机启动")" systemctl enable zramswap.service || return 1
     if ! systemctl stop zramswap.service >>"$LOG_FILE" 2>&1; then
-        warn "zramswap stop 未完全清理设备，将执行受控 reset"
+        warn "$(msg "zramswap stop did not fully clean up the device; performing a controlled reset" "zramswap stop 未完全清理设备，将执行受控 reset")"
         log_event "WARN zramswap stop returned non-zero"
     fi
 
     if command -v findmnt >/dev/null 2>&1 && findmnt -rn -S "$device" >/dev/null 2>&1; then
-        error "$device 被用作挂载文件系统，拒绝重置"
+        error "$(msg "$device is a mounted filesystem; refusing to reset it" "$device 被用作挂载文件系统，拒绝重置")"
         return 1
     fi
     if grep -q "^${device}[[:space:]]" /proc/swaps 2>/dev/null; then
-        run_cmd "停用旧 ZRam swap" swapoff "$device" || return 1
+        run_cmd "$(msg "Deactivate the old ZRam swap" "停用旧 ZRam swap")" swapoff "$device" || return 1
     fi
     if [[ -e "$reset_path" ]]; then
         if ! printf '1\n' >"$reset_path"; then
-            error "无法重置 $device"
+            error "$(msg "Cannot reset $device" "无法重置 $device")"
             return 1
         fi
         log_event "OK reset $device"
     fi
-    run_cmd "启动 zramswap 服务" systemctl start zramswap.service || return 1
+    run_cmd "$(msg "Start the zramswap service" "启动 zramswap 服务")" systemctl start zramswap.service || return 1
 }
 
 step_12_swap_zram() {
     local choice swap_size zram_percent zram_algo desc content
-    choice="$(prompt_input "配置模式（1=仅Swap, 2=Swap+ZRam）" "2")"
+    choice="$(prompt_input "$(msg "Configuration mode (1=Swap only, 2=Swap+ZRam)" "配置模式（1=仅Swap, 2=Swap+ZRam）")" "2")"
     if [[ -z "$choice" ]]; then
-        warn "跳过步骤 12"
+        warn "$(msg "Skipping step 12" "跳过步骤 12")"
         return 0
     fi
     if [[ "$choice" != "1" && "$choice" != "2" ]]; then
-        error "配置模式只能是 1 或 2"
+        error "$(msg "Configuration mode must be 1 or 2" "配置模式只能是 1 或 2")"
         return 1
     fi
 
-    swap_size="$(prompt_input "Swap 文件大小（如 1G，留空跳过）" "$BOOTSTRAP_SWAP_SIZE")"
+    swap_size="$(prompt_input "$(msg "Swap file size (e.g. 1G; leave empty to skip)" "Swap 文件大小（如 1G，留空跳过）")" "$BOOTSTRAP_SWAP_SIZE")"
     if [[ -n "$swap_size" ]] && ! validate_swap_size "$swap_size"; then
-        error "Swap 大小不合法: $swap_size"
+        error "$(msg "Invalid swap size: $swap_size" "Swap 大小不合法: $swap_size")"
         return 1
     fi
     [[ "$swap_size" == "none" ]] && swap_size=""
 
     if [[ "$choice" == "2" ]]; then
-        zram_percent="$(prompt_input "ZRam 占物理内存百分比（留空跳过）" "$BOOTSTRAP_ZRAM_PERCENT")"
+        zram_percent="$(prompt_input "$(msg "ZRam percentage of physical memory (leave empty to skip)" "ZRam 占物理内存百分比（留空跳过）")" "$BOOTSTRAP_ZRAM_PERCENT")"
         if [[ -n "$zram_percent" ]] && ! validate_percent "$zram_percent"; then
-            error "ZRam 百分比不合法: $zram_percent"
+            error "$(msg "Invalid ZRam percentage: $zram_percent" "ZRam 百分比不合法: $zram_percent")"
             return 1
         fi
         if [[ -n "$zram_percent" && "$zram_percent" != "0" ]]; then
-            zram_algo="$(prompt_input "ZRam 压缩算法（lz4/lzo/zstd）" "$BOOTSTRAP_ZRAM_ALGO")"
+            zram_algo="$(prompt_input "$(msg "ZRam compression algorithm (lz4/lzo/zstd)" "ZRam 压缩算法（lz4/lzo/zstd）")" "$BOOTSTRAP_ZRAM_ALGO")"
             if ! validate_zram_algo "$zram_algo"; then
-                error "ZRam 压缩算法不支持: $zram_algo"
+                error "$(msg "Unsupported ZRam compression algorithm: $zram_algo" "ZRam 压缩算法不支持: $zram_algo")"
                 return 1
             fi
         fi
@@ -2166,25 +2166,25 @@ step_12_swap_zram() {
     fi
 
     if [[ -z "$swap_size" && -z "${zram_percent:-}" ]]; then
-        warn "未配置 Swap 和 ZRam，跳过步骤 12"
+        warn "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
         return 0
     fi
     if [[ -z "$swap_size" && "${zram_percent:-}" == "0" ]]; then
-        warn "未配置 Swap 和 ZRam，跳过步骤 12"
+        warn "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
         return 0
     fi
 
     desc=""
     [[ -n "$swap_size" ]] && desc="Swap ($swap_size)"
     [[ -n "${zram_percent:-}" && "$zram_percent" != "0" ]] && desc="${desc:+$desc + }ZRam (${zram_percent}%/$zram_algo)"
-    if ! confirm "配置 $desc"; then
-        warn "跳过步骤 12"
+    if ! confirm "$(msg "Configure $desc" "配置 $desc")"; then
+        warn "$(msg "Skipping step 12" "跳过步骤 12")"
         return 0
     fi
 
     if [[ -n "$swap_size" ]]; then
         configure_swapfile "$swap_size" "$BOOTSTRAP_SWAP_PRIORITY" || return 1
-        success "Swapfile 配置完成"
+        success "$(msg "Swapfile configuration complete" "Swapfile 配置完成")"
     fi
 
     if [[ -n "${zram_percent:-}" && "$zram_percent" != "0" ]]; then
@@ -2204,21 +2204,21 @@ SYSCTL_ZRAM_EOF
 )
         backup_file /etc/sysctl.d/99-zram-swap.conf >/dev/null || return 1
         write_file /etc/sysctl.d/99-zram-swap.conf 0644 "$content" || return 1
-        run_cmd "应用内存 sysctl 配置" sysctl --load=/etc/sysctl.d/99-zram-swap.conf || return 1
+        run_cmd "$(msg "Apply memory sysctl settings" "应用内存 sysctl 配置")" sysctl --load=/etc/sysctl.d/99-zram-swap.conf || return 1
         restart_zramswap_safely || return 1
         if [[ "$DRY_RUN" -ne 1 ]] && ! awk -v priority="$BOOTSTRAP_ZRAM_PRIORITY" '
             $1 ~ /^\/dev\/zram/ && $5 == priority { found=1 }
             END { exit(found ? 0 : 1) }
         ' /proc/swaps; then
-            error "ZRam 已启动但未以期望优先级 ${BOOTSTRAP_ZRAM_PRIORITY} 生效"
+            error "$(msg "ZRam started but is not active with the expected priority ${BOOTSTRAP_ZRAM_PRIORITY}" "ZRam 已启动但未以期望优先级 ${BOOTSTRAP_ZRAM_PRIORITY} 生效")"
             return 1
         fi
-        success "ZRam 配置完成"
+        success "$(msg "ZRam configuration complete" "ZRam 配置完成")"
     fi
 
-    run_cmd "显示 swap 状态" swapon --show || return 1
-    run_cmd "显示 zram 状态" zramctl || true
-    run_cmd "显示内存状态" free -h || true
+    run_cmd "$(msg "Show swap status" "显示 swap 状态")" swapon --show || return 1
+    run_cmd "$(msg "Show ZRam status" "显示 zram 状态")" zramctl || true
+    run_cmd "$(msg "Show memory status" "显示内存状态")" free -h || true
 }
 
 install_crowdsec_repo() {

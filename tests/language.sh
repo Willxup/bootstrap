@@ -65,7 +65,7 @@ grep -Fq '17  Run NodeQuality' "$tmp_dir/steps-en"
 grep -Fq '17  运行 NodeQuality' "$tmp_dir/steps-zh"
 for language in en zh; do
     bash bootstrap.sh --lang "$language" --dry-run --yes \
-        --config bootstrap.conf.example --only 01,02,03,04,05,06,07,08,09,16 \
+        --config bootstrap.conf.example --only 01,02,03,04,05,06,07,08,09,10,11,12,16,17 \
         >"$tmp_dir/bootstrap-$language" 2>&1
 done
 grep -Fq 'Change the SSH port to 2222' "$tmp_dir/bootstrap-en"
@@ -74,6 +74,12 @@ grep -Fq 'Download and install the Nezha agent' "$tmp_dir/bootstrap-en"
 grep -Fq '修改 SSH 端口为 2222' "$tmp_dir/bootstrap-zh"
 grep -Fq '安装并启用 UFW' "$tmp_dir/bootstrap-zh"
 grep -Fq '下载并安装哪吒探针' "$tmp_dir/bootstrap-zh"
+grep -Fq 'Apply minimal network settings' "$tmp_dir/bootstrap-en"
+grep -Fq 'Run the NodeQuality latency test' "$tmp_dir/bootstrap-en"
+grep -Fq 'Configure Swap (1G) + ZRam (25%/lz4)' "$tmp_dir/bootstrap-en"
+grep -Fq '应用 minimal 网络参数' "$tmp_dir/bootstrap-zh"
+grep -Fq '运行 NodeQuality 延迟测试' "$tmp_dir/bootstrap-zh"
+grep -Fq '配置 Swap (1G) + ZRam (25%/lz4)' "$tmp_dir/bootstrap-zh"
 if BOOTSTRAP_LANG=invalid bash bootstrap.sh --help >"$tmp_dir/error" 2>&1; then
     echo 'invalid environment language was accepted' >&2
     exit 1

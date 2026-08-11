@@ -18,8 +18,8 @@ bash bootstrap.sh \
     --zram-percent 20 >"$output" 2>&1
 
 grep -Fq 'hostnamectl set-hostname cli-server' "$output"
-grep -Fq '应用 standard 网络参数' "$output"
-grep -Fq '确保 2G /swapfile' "$output"
+grep -Fq 'Apply standard network settings' "$output"
+grep -Fq 'Ensure 2G /swapfile' "$output"
 grep -Fq 'ZRam (20%/lz4)' "$output"
 
 bash bootstrap.sh \
@@ -28,8 +28,8 @@ bash bootstrap.sh \
     --only 12 \
     --swap-size none \
     --zram-percent 20 >"$tmp_dir/zram-only.log" 2>&1
-grep -Fq '配置 ZRam (20%/lz4)' "$tmp_dir/zram-only.log"
-if grep -Fq '/swapfile（priority=' "$tmp_dir/zram-only.log"; then
+grep -Fq 'Configure ZRam (20%/lz4)' "$tmp_dir/zram-only.log"
+if grep -Fq '/swapfile (priority=' "$tmp_dir/zram-only.log"; then
     echo "swapfile was configured in zram-only mode" >&2
     exit 1
 fi
