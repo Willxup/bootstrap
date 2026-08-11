@@ -63,6 +63,17 @@ for language in en zh; do
 done
 grep -Fq '17  Run NodeQuality' "$tmp_dir/steps-en"
 grep -Fq '17  运行 NodeQuality' "$tmp_dir/steps-zh"
+for language in en zh; do
+    bash bootstrap.sh --lang "$language" --dry-run --yes \
+        --config bootstrap.conf.example --only 01,02,03,04,05,06,07,08,09,16 \
+        >"$tmp_dir/bootstrap-$language" 2>&1
+done
+grep -Fq 'Change the SSH port to 2222' "$tmp_dir/bootstrap-en"
+grep -Fq 'Install and enable UFW' "$tmp_dir/bootstrap-en"
+grep -Fq 'Download and install the Nezha agent' "$tmp_dir/bootstrap-en"
+grep -Fq '修改 SSH 端口为 2222' "$tmp_dir/bootstrap-zh"
+grep -Fq '安装并启用 UFW' "$tmp_dir/bootstrap-zh"
+grep -Fq '下载并安装哪吒探针' "$tmp_dir/bootstrap-zh"
 if BOOTSTRAP_LANG=invalid bash bootstrap.sh --help >"$tmp_dir/error" 2>&1; then
     echo 'invalid environment language was accepted' >&2
     exit 1

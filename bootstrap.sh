@@ -1416,7 +1416,7 @@ allow_ufw_port_if_active() {
         return 0
     fi
     if ufw status 2>/dev/null | grep -q '^Status: active'; then
-        run_cmd "UFW 已启用，先开放 SSH 新端口 $port/tcp" ufw allow "$port/tcp" || return 1
+        run_cmd "$(msg "UFW is active; allow the new SSH port $port/tcp first" "UFW 已启用，先开放 SSH 新端口 $port/tcp")" ufw allow "$port/tcp" || return 1
     fi
 }
 
@@ -1434,47 +1434,47 @@ parse_os_release() {
 }
 
 step_01_update() {
-    if ! confirm "更新 apt 索引并升级所有已安装软件包"; then
-        warn "跳过步骤 01"
+    if ! confirm "$(msg "Update the apt index and upgrade all installed packages" "更新 apt 索引并升级所有已安装软件包")"; then
+        warn "$(msg "Skipping step 01" "跳过步骤 01")"
         return 0
     fi
-    run_cmd "更新 apt 索引" apt-get update || return 1
-    run_cmd "升级软件包" apt-get upgrade -y || return 1
+    run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
+    run_cmd "$(msg "Upgrade packages" "升级软件包")" apt-get upgrade -y || return 1
 }
 
 step_02_software() {
-    if ! confirm "安装必要软件: vim htop net-tools unzip curl wget"; then
-        warn "跳过步骤 02"
+    if ! confirm "$(msg "Install essential tools: vim htop net-tools unzip curl wget" "安装必要软件: vim htop net-tools unzip curl wget")"; then
+        warn "$(msg "Skipping step 02" "跳过步骤 02")"
         return 0
     fi
     apt_install vim htop net-tools unzip curl wget || return 1
 }
 
 step_03_password() {
-    if ! confirm "修改 root 密码"; then
-        warn "跳过步骤 03"
+    if ! confirm "$(msg "Change the root password" "修改 root 密码")"; then
+        warn "$(msg "Skipping step 03" "跳过步骤 03")"
         return 0
     fi
     if [[ "$AUTO_YES" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
-        warn "--yes 模式不会自动修改 root 密码，请交互执行此步骤"
+        warn "$(msg "--yes does not change the root password; run this step interactively" "--yes 模式不会自动修改 root 密码，请交互执行此步骤")"
         return 0
     fi
-    run_interactive_cmd "修改 root 密码" passwd || return 1
+    run_interactive_cmd "$(msg "Change the root password" "修改 root 密码")" passwd || return 1
 }
 
 step_04_hostname() {
     local new_hostname
-    new_hostname="$(prompt_input "新主机名（留空跳过）" "$BOOTSTRAP_HOSTNAME")"
+    new_hostname="$(prompt_input "$(msg "New hostname (leave empty to skip)" "新主机名（留空跳过）")" "$BOOTSTRAP_HOSTNAME")"
     if [[ -z "$new_hostname" ]]; then
-        warn "未输入主机名，跳过步骤 04"
+        warn "$(msg "No hostname provided; skipping step 04" "未输入主机名，跳过步骤 04")"
         return 0
     fi
     if ! validate_hostname "$new_hostname"; then
-        error "主机名不合法: $new_hostname"
+        error "$(msg "Invalid hostname: $new_hostname" "主机名不合法: $new_hostname")"
         return 1
     fi
-    if ! confirm "将主机名设置为 '$new_hostname'"; then
-        warn "跳过步骤 04"
+    if ! confirm "$(msg "Set the hostname to '$new_hostname'" "将主机名设置为 '$new_hostname'")"; then
+        warn "$(msg "Skipping step 04" "跳过步骤 04")"
         return 0
     fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -1482,11 +1482,11 @@ step_04_hostname() {
         return 0
     fi
     if [[ "$(hostname 2>/dev/null)" == "$new_hostname" ]]; then
-        warn "主机名已经是 ${new_hostname}，跳过"
+        warn "$(msg "The hostname is already ${new_hostname}; skipping" "主机名已经是 ${new_hostname}，跳过")"
         return 0
     fi
     backup_file /etc/hostname >/dev/null || return 1
-    run_cmd "设置主机名" hostnamectl set-hostname "$new_hostname" || return 1
+    run_cmd "$(msg "Set the hostname" "设置主机名")" hostnamectl set-hostname "$new_hostname" || return 1
 }
 
 timesyncd_config_for_timezone() {
@@ -1501,22 +1501,22 @@ step_16_timesync() {
     local timezone content installed_time_sync
     installed_time_sync="$(installed_external_time_sync_packages)"
     if [[ -n "$installed_time_sync" ]]; then
-        warn "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置"
+        warn "$(msg "Other time synchronization packages are installed (${installed_time_sync}); skipping systemd-timesyncd configuration" "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置")"
         return 0
     fi
 
-    timezone="$(prompt_input "系统时区" "$BOOTSTRAP_TIMEZONE")"
+    timezone="$(prompt_input "$(msg "System time zone" "系统时区")" "$BOOTSTRAP_TIMEZONE")"
     if [[ -z "$timezone" ]]; then
-        warn "未输入时区，跳过步骤 16"
+        warn "$(msg "No time zone provided; skipping step 16" "未输入时区，跳过步骤 16")"
         return 0
     fi
     if ! validate_timezone "$timezone"; then
-        error "时区不合法或系统不支持: $timezone"
+        error "$(msg "Invalid or unsupported time zone: $timezone" "时区不合法或系统不支持: $timezone")"
         return 1
     fi
 
-    if ! confirm "配置时区为 ${timezone}，启用 systemd-timesyncd（Debian/NTP Pool）"; then
-        warn "跳过步骤 16"
+    if ! confirm "$(msg "Set the time zone to ${timezone} and enable systemd-timesyncd (Debian/NTP Pool)" "配置时区为 ${timezone}，启用 systemd-timesyncd（Debian/NTP Pool）")"; then
+        warn "$(msg "Skipping step 16" "跳过步骤 16")"
         return 0
     fi
 
@@ -1524,37 +1524,37 @@ step_16_timesync() {
     apt_install systemd-timesyncd || return 1
     backup_file /etc/systemd/timesyncd.conf.d/60-ntp.conf >/dev/null || return 1
     write_file /etc/systemd/timesyncd.conf.d/60-ntp.conf 0644 "$content" || return 1
-    run_cmd "设置系统时区" timedatectl set-timezone "$timezone" || return 1
-    run_cmd "启用 systemd-timesyncd" systemctl enable --now systemd-timesyncd || return 1
-    run_cmd "重启 systemd-timesyncd" systemctl restart systemd-timesyncd || return 1
-    run_cmd "验证 systemd-timesyncd 服务" systemctl is-active --quiet systemd-timesyncd || return 1
-    run_cmd "显示时间同步状态" timedatectl timesync-status || true
+    run_cmd "$(msg "Set the system time zone" "设置系统时区")" timedatectl set-timezone "$timezone" || return 1
+    run_cmd "$(msg "Enable systemd-timesyncd" "启用 systemd-timesyncd")" systemctl enable --now systemd-timesyncd || return 1
+    run_cmd "$(msg "Restart systemd-timesyncd" "重启 systemd-timesyncd")" systemctl restart systemd-timesyncd || return 1
+    run_cmd "$(msg "Verify the systemd-timesyncd service" "验证 systemd-timesyncd 服务")" systemctl is-active --quiet systemd-timesyncd || return 1
+    run_cmd "$(msg "Show time synchronization status" "显示时间同步状态")" timedatectl timesync-status || true
 }
 
 step_05_ssh_port() {
     local ssh_port backup port_dropin port_backup service sshd_bin
-    ssh_port="$(prompt_input "SSH 端口（留空跳过）" "$BOOTSTRAP_SSH_PORT")"
+    ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
     if [[ -z "$ssh_port" ]]; then
-        warn "未输入 SSH 端口，跳过步骤 05"
+        warn "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
         return 0
     fi
     if ! validate_port "$ssh_port"; then
-        error "SSH 端口不合法: $ssh_port"
+        error "$(msg "Invalid SSH port: $ssh_port" "SSH 端口不合法: $ssh_port")"
         return 1
     fi
-    if ! confirm "修改 SSH 端口为 ${ssh_port}，并在重启前验证配置"; then
-        warn "跳过步骤 05"
+    if ! confirm "$(msg "Change the SSH port to ${ssh_port} and validate the configuration before restarting" "修改 SSH 端口为 ${ssh_port}，并在重启前验证配置")"; then
+        warn "$(msg "Skipping step 05" "跳过步骤 05")"
         return 0
     fi
 
     backup="$(backup_file /etc/ssh/sshd_config)" || return 1
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 注释 /etc/ssh/sshd_config 中已有 Port 行"
-        info "[dry-run] 确保 /etc/ssh/sshd_config 引入 sshd_config.d"
-        info "[dry-run] 写入 /etc/ssh/sshd_config.d/00-bootstrap-port.conf"
-        info "[dry-run] 清理旧的 /etc/ssh/sshd_config.d/99-bootstrap-port.conf"
+        info "$(msg "[dry-run] Comment out existing Port lines in /etc/ssh/sshd_config" "[dry-run] 注释 /etc/ssh/sshd_config 中已有 Port 行")"
+        info "$(msg "[dry-run] Ensure /etc/ssh/sshd_config includes sshd_config.d" "[dry-run] 确保 /etc/ssh/sshd_config 引入 sshd_config.d")"
+        info "$(msg "[dry-run] Write /etc/ssh/sshd_config.d/00-bootstrap-port.conf" "[dry-run] 写入 /etc/ssh/sshd_config.d/00-bootstrap-port.conf")"
+        info "$(msg "[dry-run] Remove the old /etc/ssh/sshd_config.d/99-bootstrap-port.conf" "[dry-run] 清理旧的 /etc/ssh/sshd_config.d/99-bootstrap-port.conf")"
         info "[dry-run] sshd -t -f /etc/ssh/sshd_config"
-        info "[dry-run] 如果 UFW 已启用，先放行 $ssh_port/tcp"
+        info "$(msg "[dry-run] If UFW is active, allow $ssh_port/tcp first" "[dry-run] 如果 UFW 已启用，先放行 $ssh_port/tcp")"
         info "[dry-run] systemctl restart $(detect_ssh_service)"
         return 0
     fi
@@ -1588,13 +1588,13 @@ step_05_ssh_port() {
     sshd_bin="$(command -v sshd || true)"
     [[ -z "$sshd_bin" && -x /usr/sbin/sshd ]] && sshd_bin="/usr/sbin/sshd"
     if [[ -z "$sshd_bin" ]]; then
-        error "未找到 sshd，无法验证 SSH 配置"
+        error "$(msg "sshd was not found; cannot validate SSH configuration" "未找到 sshd，无法验证 SSH 配置")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
         return 1
     fi
     if ! "$sshd_bin" -t -f /etc/ssh/sshd_config; then
-        error "SSH 配置验证失败，正在恢复备份"
+        error "$(msg "SSH configuration validation failed; restoring the backup" "SSH 配置验证失败，正在恢复备份")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
         return 1
@@ -1606,62 +1606,62 @@ step_05_ssh_port() {
         return 1
     fi
     service="$(detect_ssh_service)"
-    if ! run_cmd "重启 SSH 服务" systemctl restart "$service"; then
-        error "SSH 服务重启失败，正在恢复原配置"
+    if ! run_cmd "$(msg "Restart the SSH service" "重启 SSH 服务")" systemctl restart "$service"; then
+        error "$(msg "The SSH service failed to restart; restoring the original configuration" "SSH 服务重启失败，正在恢复原配置")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
         "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && systemctl restart "$service" >/dev/null 2>&1 || true
         return 1
     fi
-    success "SSH 端口已设置为 ${ssh_port}。启用防火墙前请确认该端口已放行。"
+    success "$(msg "The SSH port is now ${ssh_port}. Ensure this port is allowed before enabling the firewall." "SSH 端口已设置为 ${ssh_port}。启用防火墙前请确认该端口已放行。")"
 }
 
 step_06_ufw() {
     local ufw_ssh_port
-    ufw_ssh_port="$(prompt_input "防火墙允许的 SSH 端口（留空跳过）" "$BOOTSTRAP_SSH_PORT")"
+    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
     if [[ -z "$ufw_ssh_port" ]]; then
-        warn "未输入 SSH 端口，跳过步骤 06"
+        warn "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
         return 0
     fi
     if ! validate_port "$ufw_ssh_port"; then
-        error "防火墙 SSH 端口不合法: $ufw_ssh_port"
+        error "$(msg "Invalid firewall SSH port: $ufw_ssh_port" "防火墙 SSH 端口不合法: $ufw_ssh_port")"
         return 1
     fi
     if ! validate_bool "$BOOTSTRAP_KEEP_OLD_SSH_PORT"; then
-        error "BOOTSTRAP_KEEP_OLD_SSH_PORT 只能是 true 或 false"
+        error "$(msg "BOOTSTRAP_KEEP_OLD_SSH_PORT must be true or false" "BOOTSTRAP_KEEP_OLD_SSH_PORT 只能是 true 或 false")"
         return 1
     fi
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" ]] && ! validate_port "$BOOTSTRAP_OLD_SSH_PORT"; then
         error "$(msg "Invalid BOOTSTRAP_OLD_SSH_PORT: $BOOTSTRAP_OLD_SSH_PORT" "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT")"
         return 1
     fi
-    if ! confirm "安装并启用 UFW，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp"; then
-        warn "跳过步骤 06"
+    if ! confirm "$(msg "Install and enable UFW; allow $ufw_ssh_port/tcp, 80/tcp, and 443/tcp" "安装并启用 UFW，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp")"; then
+        warn "$(msg "Skipping step 06" "跳过步骤 06")"
         return 0
     fi
     apt_install ufw || return 1
-    run_cmd "开放 SSH 端口 $ufw_ssh_port/tcp" ufw allow "$ufw_ssh_port/tcp" || return 1
+    run_cmd "$(msg "Allow SSH port $ufw_ssh_port/tcp" "开放 SSH 端口 $ufw_ssh_port/tcp")" ufw allow "$ufw_ssh_port/tcp" || return 1
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
-        run_cmd "临时保留旧 SSH 端口 $BOOTSTRAP_OLD_SSH_PORT/tcp" ufw allow "$BOOTSTRAP_OLD_SSH_PORT/tcp" || return 1
+        run_cmd "$(msg "Temporarily keep the old SSH port $BOOTSTRAP_OLD_SSH_PORT/tcp open" "临时保留旧 SSH 端口 $BOOTSTRAP_OLD_SSH_PORT/tcp")" ufw allow "$BOOTSTRAP_OLD_SSH_PORT/tcp" || return 1
     fi
-    run_cmd "开放 HTTP 端口 80/tcp" ufw allow 80/tcp || return 1
-    run_cmd "开放 HTTPS 端口 443/tcp" ufw allow 443/tcp || return 1
-    run_cmd "启用 UFW" ufw --force enable || return 1
-    run_cmd "显示 UFW 状态" ufw status verbose || return 1
+    run_cmd "$(msg "Allow HTTP port 80/tcp" "开放 HTTP 端口 80/tcp")" ufw allow 80/tcp || return 1
+    run_cmd "$(msg "Allow HTTPS port 443/tcp" "开放 HTTPS 端口 443/tcp")" ufw allow 443/tcp || return 1
+    run_cmd "$(msg "Enable UFW" "启用 UFW")" ufw --force enable || return 1
+    run_cmd "$(msg "Show UFW status" "显示 UFW 状态")" ufw status verbose || return 1
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
-        warn "旧 SSH 端口已按配置保留。确认新端口能登录后，可手动执行: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp"
+        warn "$(msg "The old SSH port is still open as configured. After verifying login on the new port, run manually: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp" "旧 SSH 端口已按配置保留。确认新端口能登录后，可手动执行: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp")"
     fi
 }
 
 step_07_ssh_keys() {
     local key_file="$HOME/.ssh/authorized_keys"
     local tmp line added=0
-    if ! confirm "添加 SSH 公钥到 $key_file"; then
-        warn "跳过步骤 07"
+    if ! confirm "$(msg "Add SSH public keys to $key_file" "添加 SSH 公钥到 $key_file")"; then
+        warn "$(msg "Skipping step 07" "跳过步骤 07")"
         return 0
     fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 将创建 $HOME/.ssh 并追加 authorized_keys"
+        info "$(msg "[dry-run] Create $HOME/.ssh and append to authorized_keys" "[dry-run] 将创建 $HOME/.ssh 并追加 authorized_keys")"
         return 0
     fi
 
@@ -1679,16 +1679,16 @@ step_07_ssh_keys() {
         }
     else
         if [[ "$AUTO_YES" -eq 1 ]]; then
-            warn "--yes 模式未提供 SSH 公钥，跳过步骤 07"
+            warn "$(msg "No SSH public key provided in --yes mode; skipping step 07" "--yes 模式未提供 SSH 公钥，跳过步骤 07")"
             rm -f "$tmp"
             return 0
         fi
-        echo -e "${COLOR_WARN}请粘贴 SSH 公钥（粘贴后按 Ctrl+D 结束）:${COLOR_RESET}" >&2
+        echo -e "$(msg "${COLOR_WARN}Paste SSH public keys (press Ctrl+D when finished):${COLOR_RESET}" "${COLOR_WARN}请粘贴 SSH 公钥（粘贴后按 Ctrl+D 结束）:${COLOR_RESET}")" >&2
         cat >"$tmp" </dev/tty
     fi
 
     if [[ ! -s "$tmp" ]]; then
-        warn "没有读取到 SSH 公钥，跳过"
+        warn "$(msg "No SSH public keys received; skipping" "没有读取到 SSH 公钥，跳过")"
         rm -f "$tmp"
         return 0
     fi
@@ -1704,13 +1704,13 @@ step_07_ssh_keys() {
         fi
     done <"$tmp"
     rm -f "$tmp"
-    success "SSH 公钥处理完成，新增 $added 行"
+    success "$(msg "SSH public keys processed; added $added lines" "SSH 公钥处理完成，新增 $added 行")"
 }
 
 step_08_profile() {
     local content
-    if ! confirm "配置 /etc/profile.d/99-bootstrap.sh（git 提示、PS1、HISTFORMAT、别名）"; then
-        warn "跳过步骤 08"
+    if ! confirm "$(msg "Configure /etc/profile.d/99-bootstrap.sh (Git prompt, PS1, history timestamps, aliases)" "配置 /etc/profile.d/99-bootstrap.sh（git 提示、PS1、HISTFORMAT、别名）")"; then
+        warn "$(msg "Skipping step 08" "跳过步骤 08")"
         return 0
     fi
     content=$(cat <<'PROFILE_EOF'
@@ -1736,33 +1736,33 @@ PROFILE_EOF
 )
     backup_file /etc/profile.d/99-bootstrap.sh >/dev/null || return 1
     write_file /etc/profile.d/99-bootstrap.sh 0644 "$content" || return 1
-    run_cmd "验证 Profile 配置语法" bash -n /etc/profile.d/99-bootstrap.sh || return 1
-    warn "当前 Shell 不会继承子进程的 Profile；脚本结束后执行: source /etc/profile.d/99-bootstrap.sh（或重新登录 SSH）"
+    run_cmd "$(msg "Validate shell profile syntax" "验证 Profile 配置语法")" bash -n /etc/profile.d/99-bootstrap.sh || return 1
+    warn "$(msg "The current shell does not inherit a child process's profile; after the script finishes, run: source /etc/profile.d/99-bootstrap.sh (or log in again via SSH)" "当前 Shell 不会继承子进程的 Profile；脚本结束后执行: source /etc/profile.d/99-bootstrap.sh（或重新登录 SSH）")"
 }
 
 step_09_nezha() {
     local nezha_server nezha_secret nezha_tls tmp
-    nezha_server="$(prompt_input "哪吒探针服务器地址（格式 host:port，留空跳过）" "$BOOTSTRAP_NEZHA_SERVER")"
+    nezha_server="$(prompt_input "$(msg "Nezha server address (host:port; leave empty to skip)" "哪吒探针服务器地址（格式 host:port，留空跳过）")" "$BOOTSTRAP_NEZHA_SERVER")"
     if [[ -z "$nezha_server" ]]; then
-        warn "未配置哪吒探针，跳过步骤 09"
+        warn "$(msg "Nezha is not configured; skipping step 09" "未配置哪吒探针，跳过步骤 09")"
         return 0
     fi
     if ! validate_host_port "$nezha_server"; then
-        error "哪吒探针服务器地址不合法: $nezha_server"
+        error "$(msg "Invalid Nezha server address: $nezha_server" "哪吒探针服务器地址不合法: $nezha_server")"
         return 1
     fi
-    nezha_secret="$(prompt_secret "哪吒探针客户端密钥" "${BOOTSTRAP_NEZHA_SECRET:-}")"
+    nezha_secret="$(prompt_secret "$(msg "Nezha agent secret" "哪吒探针客户端密钥")" "${BOOTSTRAP_NEZHA_SECRET:-}")"
     if [[ -z "$nezha_secret" ]]; then
-        warn "未输入密钥，跳过步骤 09"
+        warn "$(msg "No secret provided; skipping step 09" "未输入密钥，跳过步骤 09")"
         return 0
     fi
-    nezha_tls="$(prompt_input "是否使用 TLS（true/false）" "$BOOTSTRAP_NEZHA_TLS")"
+    nezha_tls="$(prompt_input "$(msg "Use TLS (true/false)" "是否使用 TLS（true/false）")" "$BOOTSTRAP_NEZHA_TLS")"
     if ! validate_bool "$nezha_tls"; then
-        error "TLS 选项只能是 true 或 false"
+        error "$(msg "The TLS option must be true or false" "TLS 选项只能是 true 或 false")"
         return 1
     fi
-    if ! confirm "下载并安装哪吒探针 (server: $nezha_server)"; then
-        warn "跳过步骤 09"
+    if ! confirm "$(msg "Download and install the Nezha agent (server: $nezha_server)" "下载并安装哪吒探针 (server: $nezha_server)")"; then
+        warn "$(msg "Skipping step 09" "跳过步骤 09")"
         return 0
     fi
     apt_install curl || return 1
@@ -2273,7 +2273,7 @@ step_13_crowdsec() {
     run_cmd "开启 UFW 日志" ufw logging on || return 1
     run_cmd "启用 rsyslog" systemctl enable rsyslog --now || return 1
     install_crowdsec_repo || return 1
-    run_cmd "更新 apt 索引" apt-get update || return 1
+    run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
     apt_install crowdsec crowdsec-firewall-bouncer-iptables || return 1
     run_cmd "更新 CrowdSec hub" cscli hub update || return 1
     install_crowdsec_collection crowdsecurity/nginx-proxy-manager || return 1
@@ -2358,7 +2358,7 @@ step_14_docker() {
     remove_conflicting_docker_packages || return 1
     apt_install ca-certificates curl gnupg || return 1
     install_docker_repo || return 1
-    run_cmd "更新 apt 索引" apt-get update || return 1
+    run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
     apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
 
     content=$(cat <<'DOCKER_DAEMON_EOF'
