@@ -2223,7 +2223,7 @@ SYSCTL_ZRAM_EOF
 
 install_crowdsec_repo() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 添加 CrowdSec packagecloud 仓库和 keyring"
+        info "$(msg "[dry-run] Add the CrowdSec packagecloud repository and keyring" "[dry-run] 添加 CrowdSec packagecloud 仓库和 keyring")"
         return 0
     fi
     install -d -m 0755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d || return 1
@@ -2255,12 +2255,12 @@ install_crowdsec_collection() {
         info "[dry-run] cscli collections install $collection"
         return 0
     fi
-    run_cmd "安装/确认 CrowdSec collection: $collection" cscli collections install "$collection"
+    run_cmd "$(msg "Install/verify CrowdSec collection: $collection" "安装/确认 CrowdSec collection: $collection")" cscli collections install "$collection"
 }
 
 step_13_crowdsec() {
-    if ! confirm "安装 CrowdSec 防护（ufw 日志、rsyslog、nginx-proxy-manager、iptables、sshd 规则）"; then
-        warn "跳过步骤 13"
+    if ! confirm "$(msg "Install CrowdSec protection (UFW logs, rsyslog, nginx-proxy-manager, iptables, and sshd rules)" "安装 CrowdSec 防护（ufw 日志、rsyslog、nginx-proxy-manager、iptables、sshd 规则）")"; then
+        warn "$(msg "Skipping step 13" "跳过步骤 13")"
         return 0
     fi
     apt_install ufw rsyslog curl gnupg apt-transport-https || return 1
@@ -2270,19 +2270,19 @@ step_13_crowdsec() {
             apt_install debian-archive-keyring || return 1
         fi
     fi
-    run_cmd "开启 UFW 日志" ufw logging on || return 1
-    run_cmd "启用 rsyslog" systemctl enable rsyslog --now || return 1
+    run_cmd "$(msg "Enable UFW logging" "开启 UFW 日志")" ufw logging on || return 1
+    run_cmd "$(msg "Enable rsyslog" "启用 rsyslog")" systemctl enable rsyslog --now || return 1
     install_crowdsec_repo || return 1
     run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
     apt_install crowdsec crowdsec-firewall-bouncer-iptables || return 1
-    run_cmd "更新 CrowdSec hub" cscli hub update || return 1
+    run_cmd "$(msg "Update the CrowdSec hub" "更新 CrowdSec hub")" cscli hub update || return 1
     install_crowdsec_collection crowdsecurity/nginx-proxy-manager || return 1
     install_crowdsec_collection crowdsecurity/iptables || return 1
     install_crowdsec_collection crowdsecurity/sshd || return 1
-    run_cmd "启用 CrowdSec" systemctl enable crowdsec --now || return 1
-    run_cmd "验证 CrowdSec 配置" crowdsec -t || return 1
-    run_cmd "重启 CrowdSec" systemctl restart crowdsec || return 1
-    run_cmd "显示 CrowdSec collections" cscli collections list || return 1
+    run_cmd "$(msg "Enable CrowdSec" "启用 CrowdSec")" systemctl enable crowdsec --now || return 1
+    run_cmd "$(msg "Validate CrowdSec configuration" "验证 CrowdSec 配置")" crowdsec -t || return 1
+    run_cmd "$(msg "Restart CrowdSec" "重启 CrowdSec")" systemctl restart crowdsec || return 1
+    run_cmd "$(msg "Show CrowdSec collections" "显示 CrowdSec collections")" cscli collections list || return 1
 }
 
 remove_conflicting_docker_packages() {
@@ -2297,12 +2297,12 @@ remove_conflicting_docker_packages() {
         runc
     )
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 检查并移除可能与 Docker 官方包冲突的旧包"
+        info "$(msg "[dry-run] Check for and remove old packages that may conflict with official Docker packages" "[dry-run] 检查并移除可能与 Docker 官方包冲突的旧包")"
         return 0
     fi
     for pkg in "${packages[@]}"; do
         if dpkg -s "$pkg" >/dev/null 2>&1; then
-            run_cmd "移除冲突软件包: $pkg" apt-get remove -y "$pkg" || return 1
+            run_cmd "$(msg "Remove conflicting package: $pkg" "移除冲突软件包: $pkg")" apt-get remove -y "$pkg" || return 1
         fi
     done
 }
@@ -2310,7 +2310,7 @@ remove_conflicting_docker_packages() {
 install_docker_repo() {
     local docker_os docker_codename arch key_tmp
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        info "[dry-run] 添加 Docker 官方 apt 仓库（运行时按 Debian/Ubuntu 版本自动选择）"
+        info "$(msg "[dry-run] Add the official Docker apt repository (selected for the Debian/Ubuntu release at runtime)" "[dry-run] 添加 Docker 官方 apt 仓库（运行时按 Debian/Ubuntu 版本自动选择）")"
         return 0
     fi
     parse_os_release
@@ -2325,12 +2325,12 @@ install_docker_repo() {
             docker_codename="$OS_VERSION_CODENAME"
             ;;
         *)
-            error "暂不支持自动配置 Docker 仓库的系统: ${OS_ID:-unknown}"
+            error "$(msg "Automatic Docker repository setup is not supported on: ${OS_ID:-unknown}" "暂不支持自动配置 Docker 仓库的系统: ${OS_ID:-unknown}")"
             return 1
             ;;
     esac
     if [[ -z "$docker_codename" ]]; then
-        error "无法识别系统版本代号，不能配置 Docker 仓库"
+        error "$(msg "Cannot identify the OS release codename; cannot configure the Docker repository" "无法识别系统版本代号，不能配置 Docker 仓库")"
         return 1
     fi
     install -d -m 0755 /etc/apt/keyrings || return 1
@@ -2351,8 +2351,8 @@ DOCKER_REPO_EOF
 
 step_14_docker() {
     local content shim docker_daemon_backup
-    if ! confirm "安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转"; then
-        warn "跳过步骤 14"
+    if ! confirm "$(msg "Install Docker Engine, Buildx, and Docker Compose, and configure log rotation" "安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转")"; then
+        warn "$(msg "Skipping step 14" "跳过步骤 14")"
         return 0
     fi
     remove_conflicting_docker_packages || return 1
@@ -2375,8 +2375,8 @@ DOCKER_DAEMON_EOF
 )
     docker_daemon_backup="$(backup_file /etc/docker/daemon.json)" || return 1
     write_file /etc/docker/daemon.json 0644 "$content" || return 1
-    if ! run_cmd "重启 Docker" systemctl restart docker; then
-        error "Docker 重启失败，正在恢复原 daemon.json"
+    if ! run_cmd "$(msg "Restart Docker" "重启 Docker")" systemctl restart docker; then
+        error "$(msg "Docker failed to restart; restoring the original daemon.json" "Docker 重启失败，正在恢复原 daemon.json")"
         restore_file_from_backup /etc/docker/daemon.json "$docker_daemon_backup"
         systemctl restart docker >/dev/null 2>&1 || true
         return 1
@@ -2389,16 +2389,16 @@ COMPOSE_SHIM_EOF
 )
     write_file /usr/local/bin/docker-compose 0755 "$shim" || return 1
 
-    run_cmd "检查 Docker 版本" docker --version || return 1
-    run_cmd "检查 Docker Compose 版本" docker compose version || return 1
-    run_cmd "检查 docker-compose 兼容命令" docker-compose version || return 1
-    warn "Docker 会直接操作 iptables。若依赖 UFW 做严格入站控制，请额外检查 DOCKER-USER 链。"
+    run_cmd "$(msg "Check the Docker version" "检查 Docker 版本")" docker --version || return 1
+    run_cmd "$(msg "Check the Docker Compose version" "检查 Docker Compose 版本")" docker compose version || return 1
+    run_cmd "$(msg "Check the docker-compose compatibility command" "检查 docker-compose 兼容命令")" docker-compose version || return 1
+    warn "$(msg "Docker modifies iptables directly. If you rely on UFW for strict inbound filtering, also review the DOCKER-USER chain." "Docker 会直接操作 iptables。若依赖 UFW 做严格入站控制，请额外检查 DOCKER-USER 链。")"
 }
 
 step_15_vim() {
     local content
-    if ! confirm "配置 ~/.vimrc"; then
-        warn "跳过步骤 15"
+    if ! confirm "$(msg "Configure ~/.vimrc" "配置 ~/.vimrc")"; then
+        warn "$(msg "Skipping step 15" "跳过步骤 15")"
         return 0
     fi
     read -r -d '' content <<'VIM_EOF' || true
