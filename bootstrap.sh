@@ -1714,7 +1714,7 @@ step_08_profile() {
         return 0
     fi
     content=$(cat <<'PROFILE_EOF'
-# -- bootstrap 配置 --
+# -- bootstrap profile --
 export GIT_PS1_SHOWDIRTYSTATE=1
 
 if ! command -v __git_ps1 >/dev/null 2>&1 && [ -r /usr/share/git/completion/git-prompt.sh ]; then
@@ -1731,7 +1731,7 @@ HISTSIZE=4000
 HISTTIMEFORMAT="%F %T "
 export HISTTIMEFORMAT
 alias ll='ls -al'
-# -- bootstrap 配置 end --
+# -- bootstrap profile end --
 PROFILE_EOF
 )
     backup_file /etc/profile.d/99-bootstrap.sh >/dev/null || return 1
@@ -2404,40 +2404,40 @@ step_15_vim() {
     read -r -d '' content <<'VIM_EOF' || true
 " -- bootstrap vimrc --
 " ==========================================
-" 1. 基础与显示设置 (UI & Display)
+" 1. UI and display
 " ==========================================
-syntax on             " 开启语法高亮
-set number            " 显示绝对行号
-" set relativenumber    " 显示相对行号（结合 set number 使用，光标所在行显示绝对行号，其他行显示相对行号，非常方便上下移动）
-set cursorline        " 突出显示当前光标所在行
-set showmatch         " 光标遇到括号时，自动高亮对应的另一半括号
-set wildmenu          " 在底部命令模式下，开启命令自动补全的视觉提示
-set nowrap            " 不自动折行（如果单行太长，超出屏幕也不折行显示）
+syntax on             " Enable syntax highlighting
+set number            " Show absolute line numbers
+" set relativenumber    " Show relative line numbers, keeping the current line absolute
+set cursorline        " Highlight the current line
+set showmatch         " Highlight the matching bracket
+set wildmenu          " Show command-line completion choices
+set nowrap            " Do not wrap long lines
 
 " ==========================================
-" 2. 缩进与 Tab 设置 (Indentation & Tabs)
+" 2. Indentation and tabs
 " ==========================================
-set tabstop=2         " 按下 Tab 键时，Vim 显示的空格数
-set shiftwidth=2      " 自动缩进时，每一级缩进的空格数
-set expandtab         " 将 Tab 键自动转换成空格（写 Python 或前端等极力推荐开启）
-set autoindent        " 开启自动缩进（新行会自动对齐上一行的缩进）
-set smartindent       " 智能缩进（针对 C/C++ 等类似语法，识别大括号等自动调整缩进）
+set tabstop=2         " Display tabs as two spaces
+set shiftwidth=2      " Use two spaces per indentation level
+set expandtab         " Insert spaces instead of tab characters
+set autoindent        " Copy indentation from the previous line
+set smartindent       " Use syntax-aware indentation for C-like languages
 
 " ==========================================
-" 3. 搜索设置 (Search)
+" 3. Search
 " ==========================================
-set hlsearch          " 搜索时高亮显示所有匹配的结果
-set incsearch         " 边输入边搜索（输入搜索词的过程中，光标会实时跳到匹配的位置）
-set ignorecase        " 搜索时忽略大小写
-set smartcase         " 智能大小写（如果搜索词全小写，则忽略大小写；如果包含大写字母，则精确匹配大小写）
+set hlsearch          " Highlight search matches
+set incsearch         " Show matches while typing
+set ignorecase        " Ignore case when searching
+set smartcase         " Match case when the search includes uppercase letters
 
 " ==========================================
-" 4. 其他实用设置 (Misc)
+" 4. Other settings
 " ==========================================
-set encoding=utf-8    " 设置内部编码为 UTF-8，防止中文乱码
-set mouse=a           " 开启鼠标支持（可以用鼠标点击定位光标、滚动滚轮）
-set clipboard=unnamed " 共享系统剪贴板（可以直接使用 y 复制内容到系统剪贴板，用 p 粘贴系统剪贴板的内容）
-set history=1000      " 增加历史记录（保留更多的冒号命令和搜索历史）
+set encoding=utf-8    " Use UTF-8 internally
+set mouse=a           " Enable mouse support
+set clipboard=unnamed " Use the system clipboard
+set history=1000      " Keep more command and search history
 " -- bootstrap vimrc end --
 VIM_EOF
     backup_file "$HOME/.vimrc" >/dev/null || return 1
