@@ -20,6 +20,20 @@ curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh 
 
 As a regular user, run `sudo bash bootstrap.sh`. The script asks for confirmation at each step by default. Use `bash bootstrap.sh --dry-run` to preview the changes first.
 
+## Language
+
+English is the default. Pass `--lang zh` to run in Simplified Chinese, or `--lang en` to explicitly select English:
+
+```bash
+sudo bash bootstrap.sh --lang zh
+bash bootstrap.sh --lang zh --help
+bash bootstrap.sh --lang zh --dry-run
+```
+
+The language option applies to help, prompts, step names, errors, checkpoint status, and the script's own log messages. It works before or after other options, including `--help`, `--status`, and `--resume`.
+
+You can also set the `BOOTSTRAP_LANG` environment variable to `en` or `zh`; `--lang` takes precedence. This is an environment variable, not a configuration-file setting. With `sudo`, pass it explicitly using `sudo env BOOTSTRAP_LANG=zh bash bootstrap.sh`. System locale variables such as `LANG` do not select the script language, and the script does not change the system locale. Output from system commands and external installers remains unchanged. Switching languages does not reset checkpoints or rerun completed steps.
+
 ## Configuration file
 
 ```bash

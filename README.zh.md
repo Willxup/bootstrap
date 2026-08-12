@@ -20,6 +20,20 @@ curl -fLO https://raw.githubusercontent.com/Willxup/bootstrap/main/bootstrap.sh 
 
 普通用户运行时使用 `sudo bash bootstrap.sh`。脚本默认逐步询问，也可以先执行 `bash bootstrap.sh --dry-run` 预览。
 
+## 语言选择
+
+脚本默认使用英文。添加 `--lang zh` 以中文运行，也可以使用 `--lang en` 明确指定英文：
+
+```bash
+sudo bash bootstrap.sh --lang zh
+bash bootstrap.sh --lang zh --help
+bash bootstrap.sh --lang zh --dry-run
+```
+
+语言参数适用于帮助、交互提示、步骤名称、错误信息、检查点状态及脚本自身的日志文案。它可以放在其他参数之前或之后，包括与 `--help`、`--status`、`--resume` 一起使用。
+
+也可以将 `BOOTSTRAP_LANG` 环境变量设为 `en` 或 `zh`，命令行 `--lang` 优先。它是环境变量，不是配置文件选项。通过 `sudo` 使用时，可显式执行 `sudo env BOOTSTRAP_LANG=zh bash bootstrap.sh`。脚本不会根据 `LANG` 等系统语言变量自动切换，也不会更改系统语言。系统命令和外部安装程序的输出保持原样；切换语言不会重置检查点，也不会重跑已完成步骤。
+
 ## 使用配置文件
 
 ```bash
@@ -67,7 +81,7 @@ sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 - `standard`：额外使用 32 MiB TCP buffer，适合内存充足的长距离直连节点。
 - `low-memory`：使用 8 MiB buffer，适合约 1 GiB 的小机器。
 
-Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件中修改；`swap-size=none` 或 `zram-percent=0` 可单独关闭其中一项。Debian 13 上脚本会先安全停用并 reset 旧 ZRam 设备，再按新配置启动，避免普通 `restart` 沿用错误容量。
+Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件中修改；`swap-size=none` 或 `zram-percent=0` 可跳过对应项目的配置。Debian 13 上脚本会先安全停用并 reset 旧 ZRam 设备，再按新配置启动，避免普通 `restart` 沿用错误容量。
 
 ## 安全边界
 
