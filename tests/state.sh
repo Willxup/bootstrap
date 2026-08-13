@@ -138,4 +138,39 @@ printf '%s\n' "$flow_status" | grep -Fq 'Status: complete'
 printf '%s\n' "$flow_status" | grep -Fq '01  Completed'
 printf '%s\n' "$flow_status" | grep -Fq '02  Completed'
 
+# Skips retain checkpoint behavior, but must not be announced or logged as success.
+for language in en zh; do
+    TEST_STATE_FILE="$tmp_dir/skips-$language.state" TEST_LOG_FILE="$tmp_dir/skips-$language.log" \
+        TEST_LANGUAGE="$language" bash -c '
+            source ./bootstrap.sh
+            select_language --lang "$TEST_LANGUAGE"
+            set_defaults
+            STATE_FILE="$TEST_STATE_FILE"
+            LOG_FILE="$TEST_LOG_FILE"
+            ONLY_STEPS="01,02,04"
+            AUTO_YES=1
+            BOOTSTRAP_HOSTNAME=""
+            RUN_FINGERPRINT="$(configuration_fingerprint)"
+            initialize_state
+            setup_log
+            run_step 04 step_04_hostname
+            confirm() { return 1; }
+            run_step 01 step_01_update
+            step_ok() { return 0; }
+            run_step 02 step_ok
+            contains_step "$COMPLETED_STEPS" 04
+            contains_step "$COMPLETED_STEPS" 01
+            contains_step "$COMPLETED_STEPS" 02
+        ' >"$tmp_dir/skips-$language.out" 2>&1
+    grep -Fq 'STEP 04 SKIP' "$tmp_dir/skips-$language.log"
+    grep -Fq 'STEP 01 SKIP' "$tmp_dir/skips-$language.log"
+    grep -Fq 'STEP 02 OK' "$tmp_dir/skips-$language.log"
+    if grep -Eq 'Step (01|04) completed|步骤 (01|04) 完成' "$tmp_dir/skips-$language.out"; then
+        echo 'a skipped step was announced as completed' >&2
+        exit 1
+    fi
+done
+grep -Fq 'Step 02 completed' "$tmp_dir/skips-en.out"
+grep -Fq '步骤 02 完成' "$tmp_dir/skips-zh.out"
+
 echo "state tests passed"

@@ -40,6 +40,7 @@ RUN_STARTED_AT=""
 COMPLETED_STEPS=""
 CURRENT_STEP=""
 FAILED_STEP=""
+STEP_SKIPPED=0
 
 CLI_HOSTNAME=""
 CLI_TIMEZONE=""
@@ -1265,6 +1266,12 @@ install_state_traps() {
     trap 'handle_exit $?' EXIT
 }
 
+# A skipped step is still processed for this run, preserving resume behavior.
+skip_step() {
+    STEP_SKIPPED=1
+    warn "$1"
+}
+
 run_step() {
     local step_num="$1"
     local step_func="$2"
@@ -1295,6 +1302,7 @@ run_step() {
     }
     log_event "STEP $step_num START $step_name"
 
+    STEP_SKIPPED=0
     "$step_func"
     ret=$?
     if [[ $ret -eq 0 ]]; then
@@ -1304,8 +1312,12 @@ run_step() {
             error "$(msg "The step succeeded but the checkpoint could not be updated; stopping" "步骤成功但无法更新检查点，停止执行")"
             exit 1
         }
-        log_event "STEP $step_num OK $step_name"
-        success "$(msg "Step ${step_num} completed" "步骤 ${step_num} 完成")"
+        if [[ "$STEP_SKIPPED" -eq 1 ]]; then
+            log_event "STEP $step_num SKIP $step_name"
+        else
+            log_event "STEP $step_num OK $step_name"
+            success "$(msg "Step ${step_num} completed" "步骤 ${step_num} 完成")"
+        fi
     else
         RUN_STATUS="failed"
         FAILED_STEP="$step_num"
@@ -1435,7 +1447,7 @@ parse_os_release() {
 
 step_01_update() {
     if ! confirm "$(msg "Update the apt index and upgrade all installed packages" "更新 apt 索引并升级所有已安装软件包")"; then
-        warn "$(msg "Skipping step 01" "跳过步骤 01")"
+        skip_step "$(msg "Skipping step 01" "跳过步骤 01")"
         return 0
     fi
     run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
@@ -1444,7 +1456,7 @@ step_01_update() {
 
 step_02_software() {
     if ! confirm "$(msg "Install essential tools: vim htop net-tools unzip curl wget" "安装必要软件: vim htop net-tools unzip curl wget")"; then
-        warn "$(msg "Skipping step 02" "跳过步骤 02")"
+        skip_step "$(msg "Skipping step 02" "跳过步骤 02")"
         return 0
     fi
     apt_install vim htop net-tools unzip curl wget || return 1
@@ -1452,11 +1464,11 @@ step_02_software() {
 
 step_03_password() {
     if ! confirm "$(msg "Change the root password" "修改 root 密码")"; then
-        warn "$(msg "Skipping step 03" "跳过步骤 03")"
+        skip_step "$(msg "Skipping step 03" "跳过步骤 03")"
         return 0
     fi
     if [[ "$AUTO_YES" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
-        warn "$(msg "--yes does not change the root password; run this step interactively" "--yes 模式不会自动修改 root 密码，请交互执行此步骤")"
+        skip_step "$(msg "--yes does not change the root password; run this step interactively" "--yes 模式不会自动修改 root 密码，请交互执行此步骤")"
         return 0
     fi
     run_interactive_cmd "$(msg "Change the root password" "修改 root 密码")" passwd || return 1
@@ -1466,7 +1478,7 @@ step_04_hostname() {
     local new_hostname
     new_hostname="$(prompt_input "$(msg "New hostname (leave empty to skip)" "新主机名（留空跳过）")" "$BOOTSTRAP_HOSTNAME")"
     if [[ -z "$new_hostname" ]]; then
-        warn "$(msg "No hostname provided; skipping step 04" "未输入主机名，跳过步骤 04")"
+        skip_step "$(msg "No hostname provided; skipping step 04" "未输入主机名，跳过步骤 04")"
         return 0
     fi
     if ! validate_hostname "$new_hostname"; then
@@ -1474,7 +1486,7 @@ step_04_hostname() {
         return 1
     fi
     if ! confirm "$(msg "Set the hostname to '$new_hostname'" "将主机名设置为 '$new_hostname'")"; then
-        warn "$(msg "Skipping step 04" "跳过步骤 04")"
+        skip_step "$(msg "Skipping step 04" "跳过步骤 04")"
         return 0
     fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -1501,13 +1513,13 @@ step_16_timesync() {
     local timezone content installed_time_sync
     installed_time_sync="$(installed_external_time_sync_packages)"
     if [[ -n "$installed_time_sync" ]]; then
-        warn "$(msg "Other time synchronization packages are installed (${installed_time_sync}); skipping systemd-timesyncd configuration" "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置")"
+        skip_step "$(msg "Other time synchronization packages are installed (${installed_time_sync}); skipping systemd-timesyncd configuration" "已安装其他时间同步软件包（${installed_time_sync}），跳过 systemd-timesyncd 配置")"
         return 0
     fi
 
     timezone="$(prompt_input "$(msg "System time zone" "系统时区")" "$BOOTSTRAP_TIMEZONE")"
     if [[ -z "$timezone" ]]; then
-        warn "$(msg "No time zone provided; skipping step 16" "未输入时区，跳过步骤 16")"
+        skip_step "$(msg "No time zone provided; skipping step 16" "未输入时区，跳过步骤 16")"
         return 0
     fi
     if ! validate_timezone "$timezone"; then
@@ -1516,7 +1528,7 @@ step_16_timesync() {
     fi
 
     if ! confirm "$(msg "Set the time zone to ${timezone} and enable systemd-timesyncd (Debian/NTP Pool)" "配置时区为 ${timezone}，启用 systemd-timesyncd（Debian/NTP Pool）")"; then
-        warn "$(msg "Skipping step 16" "跳过步骤 16")"
+        skip_step "$(msg "Skipping step 16" "跳过步骤 16")"
         return 0
     fi
 
@@ -1535,7 +1547,7 @@ step_05_ssh_port() {
     local ssh_port backup port_dropin port_backup legacy_dropin legacy_backup service sshd_bin
     ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
     if [[ -z "$ssh_port" ]]; then
-        warn "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
+        skip_step "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
         return 0
     fi
     if ! validate_port "$ssh_port"; then
@@ -1543,7 +1555,7 @@ step_05_ssh_port() {
         return 1
     fi
     if ! confirm "$(msg "Change the SSH port to ${ssh_port} and validate the configuration before restarting" "修改 SSH 端口为 ${ssh_port}，并在重启前验证配置")"; then
-        warn "$(msg "Skipping step 05" "跳过步骤 05")"
+        skip_step "$(msg "Skipping step 05" "跳过步骤 05")"
         return 0
     fi
 
@@ -1630,7 +1642,7 @@ step_06_ufw() {
     local ufw_ssh_port
     ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
     if [[ -z "$ufw_ssh_port" ]]; then
-        warn "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
+        skip_step "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
         return 0
     fi
     if ! validate_port "$ufw_ssh_port"; then
@@ -1646,7 +1658,7 @@ step_06_ufw() {
         return 1
     fi
     if ! confirm "$(msg "Install and enable UFW; allow $ufw_ssh_port/tcp, 80/tcp, and 443/tcp" "安装并启用 UFW，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp")"; then
-        warn "$(msg "Skipping step 06" "跳过步骤 06")"
+        skip_step "$(msg "Skipping step 06" "跳过步骤 06")"
         return 0
     fi
     apt_install ufw || return 1
@@ -1667,7 +1679,7 @@ step_07_ssh_keys() {
     local key_file="$HOME/.ssh/authorized_keys"
     local tmp line added=0
     if ! confirm "$(msg "Add SSH public keys to $key_file" "添加 SSH 公钥到 $key_file")"; then
-        warn "$(msg "Skipping step 07" "跳过步骤 07")"
+        skip_step "$(msg "Skipping step 07" "跳过步骤 07")"
         return 0
     fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -1689,7 +1701,7 @@ step_07_ssh_keys() {
         }
     else
         if [[ "$AUTO_YES" -eq 1 ]]; then
-            warn "$(msg "No SSH public key provided in --yes mode; skipping step 07" "--yes 模式未提供 SSH 公钥，跳过步骤 07")"
+            skip_step "$(msg "No SSH public key provided in --yes mode; skipping step 07" "--yes 模式未提供 SSH 公钥，跳过步骤 07")"
             rm -f "$tmp"
             return 0
         fi
@@ -1698,7 +1710,7 @@ step_07_ssh_keys() {
     fi
 
     if [[ ! -s "$tmp" ]]; then
-        warn "$(msg "No SSH public keys received; skipping" "没有读取到 SSH 公钥，跳过")"
+        skip_step "$(msg "No SSH public keys received; skipping" "没有读取到 SSH 公钥，跳过")"
         rm -f "$tmp"
         return 0
     fi
@@ -1720,7 +1732,7 @@ step_07_ssh_keys() {
 step_08_profile() {
     local content
     if ! confirm "$(msg "Configure /etc/profile.d/99-bootstrap.sh (Git prompt, PS1, history timestamps, aliases)" "配置 /etc/profile.d/99-bootstrap.sh（git 提示、PS1、HISTFORMAT、别名）")"; then
-        warn "$(msg "Skipping step 08" "跳过步骤 08")"
+        skip_step "$(msg "Skipping step 08" "跳过步骤 08")"
         return 0
     fi
     content=$(cat <<'PROFILE_EOF'
@@ -1754,7 +1766,7 @@ step_09_nezha() {
     local nezha_server nezha_secret nezha_tls tmp
     nezha_server="$(prompt_input "$(msg "Nezha server address (host:port; leave empty to skip)" "哪吒探针服务器地址（格式 host:port，留空跳过）")" "$BOOTSTRAP_NEZHA_SERVER")"
     if [[ -z "$nezha_server" ]]; then
-        warn "$(msg "Nezha is not configured; skipping step 09" "未配置哪吒探针，跳过步骤 09")"
+        skip_step "$(msg "Nezha is not configured; skipping step 09" "未配置哪吒探针，跳过步骤 09")"
         return 0
     fi
     if ! validate_host_port "$nezha_server"; then
@@ -1763,7 +1775,7 @@ step_09_nezha() {
     fi
     nezha_secret="$(prompt_secret "$(msg "Nezha agent secret" "哪吒探针客户端密钥")" "${BOOTSTRAP_NEZHA_SECRET:-}")"
     if [[ -z "$nezha_secret" ]]; then
-        warn "$(msg "No secret provided; skipping step 09" "未输入密钥，跳过步骤 09")"
+        skip_step "$(msg "No secret provided; skipping step 09" "未输入密钥，跳过步骤 09")"
         return 0
     fi
     nezha_tls="$(prompt_input "$(msg "Use TLS (true/false)" "是否使用 TLS（true/false）")" "$BOOTSTRAP_NEZHA_TLS")"
@@ -1772,7 +1784,7 @@ step_09_nezha() {
         return 1
     fi
     if ! confirm "$(msg "Download and install the Nezha agent (server: $nezha_server)" "下载并安装哪吒探针 (server: $nezha_server)")"; then
-        warn "$(msg "Skipping step 09" "跳过步骤 09")"
+        skip_step "$(msg "Skipping step 09" "跳过步骤 09")"
         return 0
     fi
     apt_install curl || return 1
@@ -1844,7 +1856,7 @@ NETWORK_LOW_MEMORY_EOF
 step_10_bbr() {
     local content current_cc current_qdisc modules_content
     if ! confirm "$(msg "Apply ${BOOTSTRAP_NETWORK_PROFILE} network settings (BBR + FQ)" "应用 ${BOOTSTRAP_NETWORK_PROFILE} 网络参数（BBR + FQ）")"; then
-        warn "$(msg "Skipping step 10" "跳过步骤 10")"
+        skip_step "$(msg "Skipping step 10" "跳过步骤 10")"
         return 0
     fi
     content="$(network_profile_content "$BOOTSTRAP_NETWORK_PROFILE")" || return 1
@@ -1928,7 +1940,7 @@ configure_ufw_ipv6_disabled() {
 step_11_ipv6() {
     local content
     if ! confirm "$(msg "Disable IPv6 (optional)" "禁用 IPv6（可选）")"; then
-        warn "$(msg "Skipping step 11" "跳过步骤 11")"
+        skip_step "$(msg "Skipping step 11" "跳过步骤 11")"
         return 0
     fi
     content=$(cat <<'IPV6_EOF'
@@ -1946,7 +1958,7 @@ IPV6_EOF
 step_17_nodequality() {
     local tmp ret
     if ! confirm "$(msg "Run the NodeQuality latency test (downloads the official test script)" "运行 NodeQuality 延迟测试（会下载官方测试脚本）")"; then
-        warn "$(msg "Skipping step 17" "跳过步骤 17")"
+        skip_step "$(msg "Skipping step 17" "跳过步骤 17")"
         return 0
     fi
     apt_install curl || return 1
@@ -2143,7 +2155,7 @@ step_12_swap_zram() {
     local choice swap_size zram_percent zram_algo desc content
     choice="$(prompt_input "$(msg "Configuration mode (1=Swap only, 2=Swap+ZRam)" "配置模式（1=仅Swap, 2=Swap+ZRam）")" "2")"
     if [[ -z "$choice" ]]; then
-        warn "$(msg "Skipping step 12" "跳过步骤 12")"
+        skip_step "$(msg "Skipping step 12" "跳过步骤 12")"
         return 0
     fi
     if [[ "$choice" != "1" && "$choice" != "2" ]]; then
@@ -2176,11 +2188,11 @@ step_12_swap_zram() {
     fi
 
     if [[ -z "$swap_size" && -z "${zram_percent:-}" ]]; then
-        warn "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
+        skip_step "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
         return 0
     fi
     if [[ -z "$swap_size" && "${zram_percent:-}" == "0" ]]; then
-        warn "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
+        skip_step "$(msg "Neither Swap nor ZRam is configured; skipping step 12" "未配置 Swap 和 ZRam，跳过步骤 12")"
         return 0
     fi
 
@@ -2188,7 +2200,7 @@ step_12_swap_zram() {
     [[ -n "$swap_size" ]] && desc="Swap ($swap_size)"
     [[ -n "${zram_percent:-}" && "$zram_percent" != "0" ]] && desc="${desc:+$desc + }ZRam (${zram_percent}%/$zram_algo)"
     if ! confirm "$(msg "Configure $desc" "配置 $desc")"; then
-        warn "$(msg "Skipping step 12" "跳过步骤 12")"
+        skip_step "$(msg "Skipping step 12" "跳过步骤 12")"
         return 0
     fi
 
@@ -2270,7 +2282,7 @@ install_crowdsec_collection() {
 
 step_13_crowdsec() {
     if ! confirm "$(msg "Install CrowdSec protection (UFW logs, rsyslog, nginx-proxy-manager, iptables, and sshd rules)" "安装 CrowdSec 防护（ufw 日志、rsyslog、nginx-proxy-manager、iptables、sshd 规则）")"; then
-        warn "$(msg "Skipping step 13" "跳过步骤 13")"
+        skip_step "$(msg "Skipping step 13" "跳过步骤 13")"
         return 0
     fi
     apt_install ufw rsyslog curl gnupg apt-transport-https || return 1
@@ -2362,7 +2374,7 @@ DOCKER_REPO_EOF
 step_14_docker() {
     local content shim docker_daemon_backup
     if ! confirm "$(msg "Install Docker Engine, Buildx, and Docker Compose, and configure log rotation" "安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转")"; then
-        warn "$(msg "Skipping step 14" "跳过步骤 14")"
+        skip_step "$(msg "Skipping step 14" "跳过步骤 14")"
         return 0
     fi
     remove_conflicting_docker_packages || return 1
@@ -2408,7 +2420,7 @@ COMPOSE_SHIM_EOF
 step_15_vim() {
     local content
     if ! confirm "$(msg "Configure ~/.vimrc" "配置 ~/.vimrc")"; then
-        warn "$(msg "Skipping step 15" "跳过步骤 15")"
+        skip_step "$(msg "Skipping step 15" "跳过步骤 15")"
         return 0
     fi
     read -r -d '' content <<'VIM_EOF' || true
