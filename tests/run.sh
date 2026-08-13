@@ -7,7 +7,8 @@ for test_file in \
     tests/privacy-defaults.sh \
     tests/language.sh \
     tests/dry-run.sh \
-    tests/state.sh; do
+    tests/state.sh \
+    tests/ssh-rollback.sh; do
     echo "==> $test_file"
     bash "$test_file"
 done

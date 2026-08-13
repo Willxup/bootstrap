@@ -1532,7 +1532,7 @@ step_16_timesync() {
 }
 
 step_05_ssh_port() {
-    local ssh_port backup port_dropin port_backup service sshd_bin
+    local ssh_port backup port_dropin port_backup legacy_dropin legacy_backup service sshd_bin
     ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
     if [[ -z "$ssh_port" ]]; then
         warn "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
@@ -1561,27 +1561,33 @@ step_05_ssh_port() {
 
     port_dropin="/etc/ssh/sshd_config.d/00-bootstrap-port.conf"
     port_backup="$(backup_file "$port_dropin")" || return 1
+    legacy_dropin="/etc/ssh/sshd_config.d/99-bootstrap-port.conf"
+    legacy_backup="$(backup_file "$legacy_dropin")" || return 1
     install -d -m 0755 /etc/ssh/sshd_config.d || return 1
     if [[ -f /etc/ssh/sshd_config ]]; then
         sed -i -E 's/^([[:space:]]*)Port[[:space:]]+/# disabled by bootstrap: &/' /etc/ssh/sshd_config || {
             restore_file_from_backup /etc/ssh/sshd_config "$backup"
             restore_file_from_backup "$port_dropin" "$port_backup"
+            restore_file_from_backup "$legacy_dropin" "$legacy_backup"
             return 1
         }
     fi
     ensure_sshd_config_include || {
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     }
     printf "Port %s\n" "$ssh_port" >"$port_dropin" || {
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     }
-    rm -f /etc/ssh/sshd_config.d/99-bootstrap-port.conf || {
+    rm -f "$legacy_dropin" || {
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     }
 
@@ -1591,18 +1597,21 @@ step_05_ssh_port() {
         error "$(msg "sshd was not found; cannot validate SSH configuration" "未找到 sshd，无法验证 SSH 配置")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     fi
     if ! "$sshd_bin" -t -f /etc/ssh/sshd_config; then
         error "$(msg "SSH configuration validation failed; restoring the backup" "SSH 配置验证失败，正在恢复备份")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     fi
 
     if ! allow_ufw_port_if_active "$ssh_port"; then
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     fi
     service="$(detect_ssh_service)"
@@ -1610,6 +1619,7 @@ step_05_ssh_port() {
         error "$(msg "The SSH service failed to restart; restoring the original configuration" "SSH 服务重启失败，正在恢复原配置")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
+        restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && systemctl restart "$service" >/dev/null 2>&1 || true
         return 1
     fi
