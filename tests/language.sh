@@ -5,9 +5,10 @@ cd "$(dirname "$0")/.."
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
-export BOOTSTRAP_LANG=en
+unset BOOTSTRAP_LANG
 bash bootstrap.sh --help >"$tmp_dir/help-en"
 grep -Fq 'Usage:' "$tmp_dir/help-en"
+export BOOTSTRAP_LANG=en
 for args in '--lang zh --help' '--help --lang zh' '--lang=zh --help'; do
     # Intentional splitting of fixed argument lists.
     # shellcheck disable=SC2086
@@ -41,6 +42,13 @@ expect_failure 'Invalid BOOTSTRAP_SSH_PORT: invalid' --dry-run --ssh-port invali
 expect_failure 'BOOTSTRAP_SSH_PORT 不合法: invalid' --lang zh --dry-run --ssh-port invalid
 expect_failure '--resume and --reset-state cannot be used together' --resume --reset-state
 expect_failure '--resume 与 --reset-state 不能同时使用' --resume --reset-state --lang zh
+expect_failure 'Cannot read configuration file:' --dry-run --config "$tmp_dir/missing.conf"
+expect_failure '配置文件不可读:' --dry-run --config "$tmp_dir/missing.conf" --lang zh
+expect_failure 'No readable checkpoint:' --status --state-file "$tmp_dir/missing.state"
+expect_failure '没有可读取的检查点:' --status --state-file "$tmp_dir/missing.state" --lang zh
+printf 'BOOTSTRAP_UNKNOWN=value\n' >"$tmp_dir/invalid.conf"
+expect_failure 'Unknown configuration key' --dry-run --config "$tmp_dir/invalid.conf"
+expect_failure '未知配置项' --dry-run --config "$tmp_dir/invalid.conf" --lang zh
 
 # Prompt text goes to stderr; stdout must remain the literal input value.
 for language in en zh; do
@@ -63,10 +71,18 @@ for language in en zh; do
 done
 grep -Fq '17  Run NodeQuality' "$tmp_dir/steps-en"
 grep -Fq '17  运行 NodeQuality' "$tmp_dir/steps-zh"
+cp bootstrap.conf.example "$tmp_dir/config"
+printf '\nBOOTSTRAP_NEZHA_SECRET=language-test-placeholder\n' >>"$tmp_dir/config"
 for language in en zh; do
     bash bootstrap.sh --lang "$language" --dry-run --yes \
-        --config bootstrap.conf.example --only 01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17 \
+        --config "$tmp_dir/config" --only 01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17 \
+        --state-file "$tmp_dir/state-$language" --log-file "$tmp_dir/log-$language" \
         >"$tmp_dir/bootstrap-$language" 2>&1
+    [[ ! -e "$tmp_dir/state-$language" && ! -e "$tmp_dir/log-$language" ]]
+    if grep -Fq 'language-test-placeholder' "$tmp_dir/bootstrap-$language"; then
+        echo 'dry-run exposed a secret' >&2
+        exit 1
+    fi
 done
 grep -Fq 'Change the SSH port to 2222' "$tmp_dir/bootstrap-en"
 grep -Fq 'Install and enable UFW' "$tmp_dir/bootstrap-en"
@@ -86,6 +102,28 @@ grep -Fq 'Configure ~/.vimrc' "$tmp_dir/bootstrap-en"
 grep -Fq '安装 CrowdSec 防护' "$tmp_dir/bootstrap-zh"
 grep -Fq '安装 Docker Engine' "$tmp_dir/bootstrap-zh"
 grep -Fq '配置 ~/.vimrc' "$tmp_dir/bootstrap-zh"
+
+# Real log writes use temporary paths; subprocess output and exit codes stay intact.
+for language in en zh; do
+    LANGUAGE_UNDER_TEST="$language" LOG_UNDER_TEST="$tmp_dir/command-$language.log" \
+        bash -c '
+            source ./bootstrap.sh
+            select_language --lang "$LANGUAGE_UNDER_TEST"
+            LOG_FILE="$LOG_UNDER_TEST"
+            setup_log || exit 1
+            run_cmd "$(msg "Test command" "测试命令")" bash -c "echo raw-child-output; exit 7"
+            [[ $? -eq 7 ]]
+        ' >"$tmp_dir/command-$language.out" 2>"$tmp_dir/command-$language.err"
+    grep -Fxq 'raw-child-output' "$tmp_dir/command-$language.log"
+    [[ ! -s "$tmp_dir/command-$language.out" ]]
+done
+grep -Fq 'started =====' "$tmp_dir/command-en.log"
+grep -Fq 'FAIL (7) Test command' "$tmp_dir/command-en.log"
+grep -Fq 'Test command failed (exit code 7)' "$tmp_dir/command-en.err"
+grep -Fq '开始 =====' "$tmp_dir/command-zh.log"
+grep -Fq 'FAIL (7) 测试命令' "$tmp_dir/command-zh.log"
+grep -Fq '测试命令 失败（退出码 7）' "$tmp_dir/command-zh.err"
+
 if BOOTSTRAP_LANG=invalid bash bootstrap.sh --help >"$tmp_dir/error" 2>&1; then
     echo 'invalid environment language was accepted' >&2
     exit 1

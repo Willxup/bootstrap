@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export BOOTSTRAP_LANG=en
 
 cd "$(dirname "$0")/.."
 
@@ -122,8 +123,8 @@ TEST_STATE_FILE="$flow_state" TEST_LOG_FILE="$tmp_dir/flow.log" bash -c '
     SKIP_STEPS=""
     set_defaults
     RESUME=1
-    prepare_state
     select_language --lang zh
+    prepare_state
     must_not_run() { return 77; }
     step_ok() { return 0; }
     run_step "01" must_not_run

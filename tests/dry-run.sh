@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export BOOTSTRAP_LANG=en
 
 cd "$(dirname "$0")/.."
 
