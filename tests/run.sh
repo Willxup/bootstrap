@@ -10,7 +10,8 @@ for test_file in \
     tests/state.sh \
     tests/ssh-rollback.sh \
     tests/input.sh \
-    tests/download.sh; do
+    tests/download.sh \
+    tests/docker-config.sh; do
     echo "==> $test_file"
     bash "$test_file"
 done

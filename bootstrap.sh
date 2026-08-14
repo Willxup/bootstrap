@@ -2388,18 +2388,34 @@ DOCKER_REPO_EOF
 }
 
 step_14_docker() {
-    local content shim docker_daemon_backup
-    if ! confirm "$(msg "Install Docker Engine, Buildx, and Docker Compose, and configure log rotation" "安装 Docker Engine、Buildx、Docker Compose，并配置日志轮转")"; then
+    local content shim docker_daemon_backup docker_config_action=2
+    if ! confirm "$(msg "Install Docker Engine, Buildx, and Docker Compose, and review daemon configuration" "安装 Docker Engine、Buildx、Docker Compose，并检查守护进程配置")"; then
         skip_step "$(msg "Skipping step 14" "跳过步骤 14")"
         return 0
     fi
+    if [[ -e /etc/docker/daemon.json ]]; then
+        docker_config_action="$(prompt_input "$(msg "Existing /etc/docker/daemon.json: 1=keep, 2=overwrite with bootstrap defaults" "已有 /etc/docker/daemon.json：1=保留，2=使用脚本默认配置覆盖")" "1")" || return 1
+        case "$docker_config_action" in
+            "" | 1)
+                docker_config_action=1
+                info "$(msg "Keeping the existing Docker daemon configuration" "保留已有 Docker 守护进程配置")"
+                ;;
+            2) ;;
+            *)
+                error "$(msg "Choose 1 to keep or 2 to overwrite Docker configuration" "请选择 1 保留或 2 覆盖 Docker 配置")"
+                return 1
+                ;;
+        esac
+    fi
+
     remove_conflicting_docker_packages || return 1
     apt_install ca-certificates curl gnupg || return 1
     install_docker_repo || return 1
     run_cmd "$(msg "Update the apt index" "更新 apt 索引")" apt-get update || return 1
     apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
 
-    content=$(cat <<'DOCKER_DAEMON_EOF'
+    if [[ "$docker_config_action" == "2" ]]; then
+        content=$(cat <<'DOCKER_DAEMON_EOF'
 {
     "log-driver": "json-file",
     "log-opts": {
@@ -2410,14 +2426,15 @@ step_14_docker() {
     "storage-driver": "overlay2"
 }
 DOCKER_DAEMON_EOF
-)
-    docker_daemon_backup="$(backup_file /etc/docker/daemon.json)" || return 1
-    write_file /etc/docker/daemon.json 0644 "$content" || return 1
-    if ! run_cmd "$(msg "Restart Docker" "重启 Docker")" systemctl restart docker; then
-        error "$(msg "Docker failed to restart; restoring the original daemon.json" "Docker 重启失败，正在恢复原 daemon.json")"
-        restore_file_from_backup /etc/docker/daemon.json "$docker_daemon_backup"
-        systemctl restart docker >/dev/null 2>&1 || true
-        return 1
+    )
+        docker_daemon_backup="$(backup_file /etc/docker/daemon.json)" || return 1
+        write_file /etc/docker/daemon.json 0644 "$content" || return 1
+        if ! run_cmd "$(msg "Restart Docker" "重启 Docker")" systemctl restart docker; then
+            error "$(msg "Docker failed to restart; restoring the original daemon.json" "Docker 重启失败，正在恢复原 daemon.json")"
+            restore_file_from_backup /etc/docker/daemon.json "$docker_daemon_backup"
+            systemctl restart docker >/dev/null 2>&1 || true
+            return 1
+        fi
     fi
 
     shim=$(cat <<'COMPOSE_SHIM_EOF'
