@@ -9,7 +9,8 @@ for test_file in \
     tests/dry-run.sh \
     tests/state.sh \
     tests/ssh-rollback.sh \
-    tests/input.sh; do
+    tests/input.sh \
+    tests/download.sh; do
     echo "==> $test_file"
     bash "$test_file"
 done

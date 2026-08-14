@@ -867,7 +867,8 @@ download_file() {
         info "$(msg "[dry-run] Download $url to $output" "[dry-run] 下载 $url 到 $output")"
         return 0
     fi
-    curl --fail --location --silent --show-error --retry 3 --proto '=https' --tlsv1.2 \
+    curl --fail --location --silent --show-error --retry 3 \
+        --connect-timeout 15 --max-time 120 --retry-max-time 300 --proto '=https' --tlsv1.2 \
         --output "$output" "$url"
 }
 
