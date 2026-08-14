@@ -534,6 +534,12 @@ run_interactive_cmd() {
     log_event "OK $description"
 }
 
+abort_input() {
+    printf '\n' >&2
+    error "$(msg "Input ended or could not be read from the terminal; stopping" "输入已结束或无法读取终端，停止执行")"
+    exit 1
+}
+
 confirm() {
     local msg="$1"
     local answer
@@ -546,7 +552,9 @@ confirm() {
     fi
     while true; do
         echo -ne "\n${COLOR_BOLD}${msg}${COLOR_RESET} [y/n]: " >&2
-        read -r answer </dev/tty
+        if ! { read -r answer </dev/tty; } 2>/dev/null; then
+            abort_input
+        fi
         case "$answer" in
             y | Y) return 0 ;;
             n | N) return 1 ;;
@@ -573,7 +581,9 @@ prompt_input() {
     else
         echo -ne "$(msg "\n  (Press Enter to skip): " "\n  (直接回车跳过): ")" >&2
     fi
-    read -r input </dev/tty
+    if ! { read -r input </dev/tty; } 2>/dev/null; then
+        abort_input
+    fi
     if [[ "$input" == "n" || "$input" == "N" ]]; then
         echo ""
     elif [[ -z "$input" && -n "$default" ]]; then
@@ -601,7 +611,9 @@ prompt_secret() {
         return 0
     fi
     echo -ne "$(msg "${COLOR_BOLD}  $description${COLOR_RESET}\n  (Input is hidden; press Enter to skip): " "${COLOR_BOLD}  $description${COLOR_RESET}\n  (输入内容不会显示，直接回车跳过): ")" >&2
-    read -r -s input </dev/tty
+    if ! { read -r -s input </dev/tty; } 2>/dev/null; then
+        abort_input
+    fi
     echo "" >&2
     echo "$input"
 }
@@ -1476,7 +1488,7 @@ step_03_password() {
 
 step_04_hostname() {
     local new_hostname
-    new_hostname="$(prompt_input "$(msg "New hostname (leave empty to skip)" "新主机名（留空跳过）")" "$BOOTSTRAP_HOSTNAME")"
+    new_hostname="$(prompt_input "$(msg "New hostname (leave empty to skip)" "新主机名（留空跳过）")" "$BOOTSTRAP_HOSTNAME")" || return 1
     if [[ -z "$new_hostname" ]]; then
         skip_step "$(msg "No hostname provided; skipping step 04" "未输入主机名，跳过步骤 04")"
         return 0
@@ -1517,7 +1529,7 @@ step_16_timesync() {
         return 0
     fi
 
-    timezone="$(prompt_input "$(msg "System time zone" "系统时区")" "$BOOTSTRAP_TIMEZONE")"
+    timezone="$(prompt_input "$(msg "System time zone" "系统时区")" "$BOOTSTRAP_TIMEZONE")" || return 1
     if [[ -z "$timezone" ]]; then
         skip_step "$(msg "No time zone provided; skipping step 16" "未输入时区，跳过步骤 16")"
         return 0
@@ -1545,7 +1557,7 @@ step_16_timesync() {
 
 step_05_ssh_port() {
     local ssh_port backup port_dropin port_backup legacy_dropin legacy_backup service sshd_bin
-    ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
+    ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")" || return 1
     if [[ -z "$ssh_port" ]]; then
         skip_step "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
         return 0
@@ -1640,7 +1652,7 @@ step_05_ssh_port() {
 
 step_06_ufw() {
     local ufw_ssh_port
-    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")"
+    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")" || return 1
     if [[ -z "$ufw_ssh_port" ]]; then
         skip_step "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
         return 0
@@ -1706,7 +1718,10 @@ step_07_ssh_keys() {
             return 0
         fi
         echo -e "$(msg "${COLOR_WARN}Paste SSH public keys (press Ctrl+D when finished):${COLOR_RESET}" "${COLOR_WARN}请粘贴 SSH 公钥（粘贴后按 Ctrl+D 结束）:${COLOR_RESET}")" >&2
-        cat >"$tmp" </dev/tty
+        if ! { cat >"$tmp" </dev/tty; } 2>/dev/null; then
+            rm -f "$tmp"
+            abort_input
+        fi
     fi
 
     if [[ ! -s "$tmp" ]]; then
@@ -1764,7 +1779,7 @@ PROFILE_EOF
 
 step_09_nezha() {
     local nezha_server nezha_secret nezha_tls tmp
-    nezha_server="$(prompt_input "$(msg "Nezha server address (host:port; leave empty to skip)" "哪吒探针服务器地址（格式 host:port，留空跳过）")" "$BOOTSTRAP_NEZHA_SERVER")"
+    nezha_server="$(prompt_input "$(msg "Nezha server address (host:port; leave empty to skip)" "哪吒探针服务器地址（格式 host:port，留空跳过）")" "$BOOTSTRAP_NEZHA_SERVER")" || return 1
     if [[ -z "$nezha_server" ]]; then
         skip_step "$(msg "Nezha is not configured; skipping step 09" "未配置哪吒探针，跳过步骤 09")"
         return 0
@@ -1773,12 +1788,12 @@ step_09_nezha() {
         error "$(msg "Invalid Nezha server address: $nezha_server" "哪吒探针服务器地址不合法: $nezha_server")"
         return 1
     fi
-    nezha_secret="$(prompt_secret "$(msg "Nezha agent secret" "哪吒探针客户端密钥")" "${BOOTSTRAP_NEZHA_SECRET:-}")"
+    nezha_secret="$(prompt_secret "$(msg "Nezha agent secret" "哪吒探针客户端密钥")" "${BOOTSTRAP_NEZHA_SECRET:-}")" || return 1
     if [[ -z "$nezha_secret" ]]; then
         skip_step "$(msg "No secret provided; skipping step 09" "未输入密钥，跳过步骤 09")"
         return 0
     fi
-    nezha_tls="$(prompt_input "$(msg "Use TLS (true/false)" "是否使用 TLS（true/false）")" "$BOOTSTRAP_NEZHA_TLS")"
+    nezha_tls="$(prompt_input "$(msg "Use TLS (true/false)" "是否使用 TLS（true/false）")" "$BOOTSTRAP_NEZHA_TLS")" || return 1
     if ! validate_bool "$nezha_tls"; then
         error "$(msg "The TLS option must be true or false" "TLS 选项只能是 true 或 false")"
         return 1
@@ -2153,7 +2168,7 @@ restart_zramswap_safely() {
 
 step_12_swap_zram() {
     local choice swap_size zram_percent zram_algo desc content
-    choice="$(prompt_input "$(msg "Configuration mode (1=Swap only, 2=Swap+ZRam)" "配置模式（1=仅Swap, 2=Swap+ZRam）")" "2")"
+    choice="$(prompt_input "$(msg "Configuration mode (1=Swap only, 2=Swap+ZRam)" "配置模式（1=仅Swap, 2=Swap+ZRam）")" "2")" || return 1
     if [[ -z "$choice" ]]; then
         skip_step "$(msg "Skipping step 12" "跳过步骤 12")"
         return 0
@@ -2163,7 +2178,7 @@ step_12_swap_zram() {
         return 1
     fi
 
-    swap_size="$(prompt_input "$(msg "Swap file size (e.g. 1G; leave empty to skip)" "Swap 文件大小（如 1G，留空跳过）")" "$BOOTSTRAP_SWAP_SIZE")"
+    swap_size="$(prompt_input "$(msg "Swap file size (e.g. 1G; leave empty to skip)" "Swap 文件大小（如 1G，留空跳过）")" "$BOOTSTRAP_SWAP_SIZE")" || return 1
     if [[ -n "$swap_size" ]] && ! validate_swap_size "$swap_size"; then
         error "$(msg "Invalid swap size: $swap_size" "Swap 大小不合法: $swap_size")"
         return 1
@@ -2171,13 +2186,13 @@ step_12_swap_zram() {
     [[ "$swap_size" == "none" ]] && swap_size=""
 
     if [[ "$choice" == "2" ]]; then
-        zram_percent="$(prompt_input "$(msg "ZRam percentage of physical memory (leave empty to skip)" "ZRam 占物理内存百分比（留空跳过）")" "$BOOTSTRAP_ZRAM_PERCENT")"
+        zram_percent="$(prompt_input "$(msg "ZRam percentage of physical memory (leave empty to skip)" "ZRam 占物理内存百分比（留空跳过）")" "$BOOTSTRAP_ZRAM_PERCENT")" || return 1
         if [[ -n "$zram_percent" ]] && ! validate_percent "$zram_percent"; then
             error "$(msg "Invalid ZRam percentage: $zram_percent" "ZRam 百分比不合法: $zram_percent")"
             return 1
         fi
         if [[ -n "$zram_percent" && "$zram_percent" != "0" ]]; then
-            zram_algo="$(prompt_input "$(msg "ZRam compression algorithm (lz4/lzo/zstd)" "ZRam 压缩算法（lz4/lzo/zstd）")" "$BOOTSTRAP_ZRAM_ALGO")"
+            zram_algo="$(prompt_input "$(msg "ZRam compression algorithm (lz4/lzo/zstd)" "ZRam 压缩算法（lz4/lzo/zstd）")" "$BOOTSTRAP_ZRAM_ALGO")" || return 1
             if ! validate_zram_algo "$zram_algo"; then
                 error "$(msg "Unsupported ZRam compression algorithm: $zram_algo" "ZRam 压缩算法不支持: $zram_algo")"
                 return 1

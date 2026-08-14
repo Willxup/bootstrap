@@ -8,7 +8,8 @@ for test_file in \
     tests/language.sh \
     tests/dry-run.sh \
     tests/state.sh \
-    tests/ssh-rollback.sh; do
+    tests/ssh-rollback.sh \
+    tests/input.sh; do
     echo "==> $test_file"
     bash "$test_file"
 done
