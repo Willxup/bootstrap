@@ -1414,6 +1414,17 @@ detect_ssh_service() {
     fi
 }
 
+restart_ssh() {
+    local service="$1"
+    local socket_active="$2"
+    if [[ "$socket_active" -eq 1 ]]; then
+        run_cmd "$(msg "Reload SSH socket configuration" "重新加载 SSH socket 配置")" systemctl daemon-reload || return 1
+        run_cmd "$(msg "Restart the SSH socket and service" "重启 SSH socket 和服务")" systemctl restart ssh.socket "$service" || return 1
+    else
+        run_cmd "$(msg "Restart the SSH service" "重启 SSH 服务")" systemctl restart "$service" || return 1
+    fi
+}
+
 ensure_sshd_config_include() {
     local include_line="Include /etc/ssh/sshd_config.d/*.conf"
     local tmp
@@ -1557,7 +1568,7 @@ step_16_timesync() {
 }
 
 step_05_ssh_port() {
-    local ssh_port backup port_dropin port_backup legacy_dropin legacy_backup service sshd_bin
+    local ssh_port backup port_dropin port_backup legacy_dropin legacy_backup service sshd_bin socket_active=0
     ssh_port="$(prompt_input "$(msg "SSH port (leave empty to skip)" "SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")" || return 1
     if [[ -z "$ssh_port" ]]; then
         skip_step "$(msg "No SSH port provided; skipping step 05" "未输入 SSH 端口，跳过步骤 05")"
@@ -1572,6 +1583,10 @@ step_05_ssh_port() {
         return 0
     fi
 
+    service="$(detect_ssh_service)"
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ssh.socket >/dev/null 2>&1; then
+        socket_active=1
+    fi
     backup="$(backup_file /etc/ssh/sshd_config)" || return 1
     if [[ "$DRY_RUN" -eq 1 ]]; then
         info "$(msg "[dry-run] Comment out existing Port lines in /etc/ssh/sshd_config" "[dry-run] 注释 /etc/ssh/sshd_config 中已有 Port 行")"
@@ -1580,7 +1595,7 @@ step_05_ssh_port() {
         info "$(msg "[dry-run] Remove the old /etc/ssh/sshd_config.d/99-bootstrap-port.conf" "[dry-run] 清理旧的 /etc/ssh/sshd_config.d/99-bootstrap-port.conf")"
         info "[dry-run] sshd -t -f /etc/ssh/sshd_config"
         info "$(msg "[dry-run] If UFW is active, allow $ssh_port/tcp first" "[dry-run] 如果 UFW 已启用，先放行 $ssh_port/tcp")"
-        info "[dry-run] systemctl restart $(detect_ssh_service)"
+        restart_ssh "$service" "$socket_active" || return 1
         return 0
     fi
 
@@ -1639,13 +1654,12 @@ step_05_ssh_port() {
         restore_file_from_backup "$legacy_dropin" "$legacy_backup"
         return 1
     fi
-    service="$(detect_ssh_service)"
-    if ! run_cmd "$(msg "Restart the SSH service" "重启 SSH 服务")" systemctl restart "$service"; then
+    if ! restart_ssh "$service" "$socket_active"; then
         error "$(msg "The SSH service failed to restart; restoring the original configuration" "SSH 服务重启失败，正在恢复原配置")"
         restore_file_from_backup /etc/ssh/sshd_config "$backup"
         restore_file_from_backup "$port_dropin" "$port_backup"
         restore_file_from_backup "$legacy_dropin" "$legacy_backup"
-        "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && systemctl restart "$service" >/dev/null 2>&1 || true
+        "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && restart_ssh "$service" "$socket_active" >/dev/null 2>&1 || true
         return 1
     fi
     success "$(msg "The SSH port is now ${ssh_port}. Ensure this port is allowed before enabling the firewall." "SSH 端口已设置为 ${ssh_port}。启用防火墙前请确认该端口已放行。")"
