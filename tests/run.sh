@@ -9,6 +9,7 @@ for test_file in \
     tests/dry-run.sh \
     tests/state.sh \
     tests/ssh-rollback.sh \
+    tests/ssh-firewall.sh \
     tests/input.sh \
     tests/download.sh \
     tests/docker-config.sh; do

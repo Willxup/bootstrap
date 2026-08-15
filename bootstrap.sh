@@ -1596,6 +1596,7 @@ step_05_ssh_port() {
         info "[dry-run] sshd -t -f /etc/ssh/sshd_config"
         info "$(msg "[dry-run] If UFW is active, allow $ssh_port/tcp first" "[dry-run] 如果 UFW 已启用，先放行 $ssh_port/tcp")"
         restart_ssh "$service" "$socket_active" || return 1
+        BOOTSTRAP_SSH_PORT="$ssh_port"
         return 0
     fi
 
@@ -1662,12 +1663,21 @@ step_05_ssh_port() {
         "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && restart_ssh "$service" "$socket_active" >/dev/null 2>&1 || true
         return 1
     fi
+    BOOTSTRAP_SSH_PORT="$ssh_port"
     success "$(msg "The SSH port is now ${ssh_port}. Ensure this port is allowed before enabling the firewall." "SSH 端口已设置为 ${ssh_port}。启用防火墙前请确认该端口已放行。")"
 }
 
 step_06_ufw() {
-    local ufw_ssh_port
-    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$BOOTSTRAP_SSH_PORT")" || return 1
+    local ufw_ssh_port configured_port default_port="$BOOTSTRAP_SSH_PORT"
+    # A resumed run may skip step 05; recover its applied port from the managed file.
+    if [[ "$RESUME" -eq 1 ]] && contains_step "$COMPLETED_STEPS" "05" && \
+        [[ -r /etc/ssh/sshd_config.d/00-bootstrap-port.conf ]]; then
+        configured_port="$(awk '$1 == "Port" { print $2; exit }' /etc/ssh/sshd_config.d/00-bootstrap-port.conf)" || return 1
+        if validate_port "$configured_port"; then
+            default_port="$configured_port"
+        fi
+    fi
+    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$default_port")" || return 1
     if [[ -z "$ufw_ssh_port" ]]; then
         skip_step "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
         return 0
