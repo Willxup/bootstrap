@@ -11,6 +11,7 @@ for test_file in \
     tests/ssh-rollback.sh \
     tests/ssh-firewall.sh \
     tests/ssh-keys.sh \
+    tests/memory.sh \
     tests/input.sh \
     tests/download.sh \
     tests/docker-config.sh; do

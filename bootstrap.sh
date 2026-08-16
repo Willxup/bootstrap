@@ -2249,6 +2249,15 @@ step_12_swap_zram() {
         success "$(msg "Swapfile configuration complete" "Swapfile 配置完成")"
     fi
 
+    content=$(cat <<SYSCTL_ZRAM_EOF
+vm.swappiness=$BOOTSTRAP_SWAPPINESS
+vm.vfs_cache_pressure=$BOOTSTRAP_VFS_CACHE_PRESSURE
+SYSCTL_ZRAM_EOF
+)
+    backup_file /etc/sysctl.d/99-zram-swap.conf >/dev/null || return 1
+    write_file /etc/sysctl.d/99-zram-swap.conf 0644 "$content" || return 1
+    run_cmd "$(msg "Apply memory sysctl settings" "应用内存 sysctl 配置")" sysctl --load=/etc/sysctl.d/99-zram-swap.conf || return 1
+
     if [[ -n "${zram_percent:-}" && "$zram_percent" != "0" ]]; then
         apt_install zram-tools || return 1
         content=$(cat <<ZRAM_EOF
@@ -2259,14 +2268,6 @@ ZRAM_EOF
 )
         backup_file /etc/default/zramswap >/dev/null || return 1
         write_file /etc/default/zramswap 0644 "$content" || return 1
-        content=$(cat <<SYSCTL_ZRAM_EOF
-vm.swappiness=$BOOTSTRAP_SWAPPINESS
-vm.vfs_cache_pressure=$BOOTSTRAP_VFS_CACHE_PRESSURE
-SYSCTL_ZRAM_EOF
-)
-        backup_file /etc/sysctl.d/99-zram-swap.conf >/dev/null || return 1
-        write_file /etc/sysctl.d/99-zram-swap.conf 0644 "$content" || return 1
-        run_cmd "$(msg "Apply memory sysctl settings" "应用内存 sysctl 配置")" sysctl --load=/etc/sysctl.d/99-zram-swap.conf || return 1
         restart_zramswap_safely || return 1
         if [[ "$DRY_RUN" -ne 1 ]] && ! awk -v priority="$BOOTSTRAP_ZRAM_PRIORITY" '
             $1 ~ /^\/dev\/zram/ && $5 == priority { found=1 }
