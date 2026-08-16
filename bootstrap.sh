@@ -1755,7 +1755,7 @@ step_07_ssh_keys() {
         return 0
     fi
 
-    while IFS= read -r line; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" ]] && continue
         if ! grep -qxF "$line" "$key_file"; then
             printf "%s\n" "$line" >>"$key_file" || {
