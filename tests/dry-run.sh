@@ -94,4 +94,28 @@ if [[ -e "$marker" ]]; then
     exit 1
 fi
 
+# Reject unsupported padding before any step can execute; accept 5 and 05 alike.
+for option in --only --skip; do
+    for invalid_step in 005 011 000000000000000000000000001; do
+        if bash bootstrap.sh --dry-run --yes --only 11 "$option" "$invalid_step" >"$tmp_dir/invalid-step.log" 2>&1; then
+            echo 'an unsupported step number was accepted' >&2
+            exit 1
+        fi
+        grep -Fq 'contains an invalid step:' "$tmp_dir/invalid-step.log"
+        if grep -Fq 'Starting server bootstrap' "$tmp_dir/invalid-step.log"; then
+            echo 'invalid step selection reached execution' >&2
+            exit 1
+        fi
+    done
+done
+for selected in 5 05; do
+    for skipped in 5 05; do
+        bash bootstrap.sh --dry-run --yes --only "$selected" --skip "$skipped" >"$tmp_dir/step-alias.log" 2>&1
+        if grep -Fq 'Step 05:' "$tmp_dir/step-alias.log"; then
+            echo 'equivalent step numbers did not match' >&2
+            exit 1
+        fi
+    done
+done
+
 echo "dry-run tests passed"

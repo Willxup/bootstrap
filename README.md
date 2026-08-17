@@ -75,6 +75,8 @@ sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 
 Command-line values override the configuration file. See `./bootstrap.sh --help` for all options and [`bootstrap.conf.example`](bootstrap.conf.example) for configuration settings.
 
+Step numbers accept one or two digits (`5` or `05`); longer forms such as `005` are rejected.
+
 ## Network and memory profiles
 
 - `minimal`: enables BBR + FQ only; the conservative default.

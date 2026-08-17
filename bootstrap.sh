@@ -901,7 +901,7 @@ validate_step_list() {
             error "$(msg "$option_name contains an empty step" "$option_name 包含空步骤")"
             exit 1
         fi
-        if [[ ! "$item" =~ ^[0-9]+$ ]]; then
+        if [[ ! "$item" =~ ^[0-9]{1,2}$ ]]; then
             error "$(msg "$option_name contains an invalid step: $item" "$option_name 包含非法步骤: $item")"
             exit 1
         fi

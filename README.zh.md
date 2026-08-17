@@ -75,6 +75,8 @@ sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 
 命令行值覆盖配置文件。完整参数见 `./bootstrap.sh --help`，全部配置项见 [`bootstrap.conf.example`](bootstrap.conf.example)。
 
+步骤编号支持一位或两位数字（如 `5`、`05`），不接受 `005` 这类更长的写法。
+
 ## 网络与内存档位
 
 - `minimal`：只启用 BBR + FQ，默认且最稳妥。
