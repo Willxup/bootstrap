@@ -14,8 +14,8 @@ BOOTSTRAP_TIMEZONE=UTC
 
 BOOTSTRAP_SSH_PORT=2222
 BOOTSTRAP_OLD_SSH_PORT=22
-# Keep the old SSH port initially; close it manually after verifying the new port.
-# 首次执行建议保留旧端口，确认新端口可登录后再手动关闭。
+# Keep the old port's UFW rule; this does not keep SSH listening on that port.
+# 仅保留旧端口的 UFW 规则，不会让 SSH 继续监听旧端口。
 BOOTSTRAP_KEEP_OLD_SSH_PORT=true
 
 # Set either a public key or a public-key file path, not both.

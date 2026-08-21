@@ -1701,14 +1701,14 @@ step_06_ufw() {
     apt_install ufw || return 1
     run_cmd "$(msg "Allow SSH port $ufw_ssh_port/tcp" "开放 SSH 端口 $ufw_ssh_port/tcp")" ufw allow "$ufw_ssh_port/tcp" || return 1
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
-        run_cmd "$(msg "Temporarily keep the old SSH port $BOOTSTRAP_OLD_SSH_PORT/tcp open" "临时保留旧 SSH 端口 $BOOTSTRAP_OLD_SSH_PORT/tcp")" ufw allow "$BOOTSTRAP_OLD_SSH_PORT/tcp" || return 1
+        run_cmd "$(msg "Keep the UFW rule for the old SSH port $BOOTSTRAP_OLD_SSH_PORT/tcp" "保留旧 SSH 端口 $BOOTSTRAP_OLD_SSH_PORT/tcp 的 UFW 规则")" ufw allow "$BOOTSTRAP_OLD_SSH_PORT/tcp" || return 1
     fi
     run_cmd "$(msg "Allow HTTP port 80/tcp" "开放 HTTP 端口 80/tcp")" ufw allow 80/tcp || return 1
     run_cmd "$(msg "Allow HTTPS port 443/tcp" "开放 HTTPS 端口 443/tcp")" ufw allow 443/tcp || return 1
     run_cmd "$(msg "Enable UFW" "启用 UFW")" ufw --force enable || return 1
     run_cmd "$(msg "Show UFW status" "显示 UFW 状态")" ufw status verbose || return 1
     if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
-        warn "$(msg "The old SSH port is still open as configured. After verifying login on the new port, run manually: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp" "旧 SSH 端口已按配置保留。确认新端口能登录后，可手动执行: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp")"
+        warn "$(msg "Only the old port's UFW rule was retained; this does not keep SSH listening there. After verifying login on the new port, run manually: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp" "仅保留了旧端口的 UFW 规则，不会让 SSH 继续监听旧端口。确认新端口能登录后，可手动执行: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp")"
     fi
 }
 

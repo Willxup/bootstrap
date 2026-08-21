@@ -88,7 +88,7 @@ Swap/ZRam sizes, percentages, priorities, and swappiness can be changed in the c
 ## Safety considerations
 
 - If `/etc/docker/daemon.json` already exists, step 14 asks whether to keep it (`1`, the default) or overwrite it with the script's defaults (`2`). `--yes` and `--dry-run` keep existing configuration. Overwriting creates a backup first; a failed Docker restart restores it. Keeping the file also skips the script's configuration restart, although package installation or upgrades may still affect the service.
-- Before changing SSH settings, confirm that console, VNC, or rescue access is available. Keep the old port temporarily when switching ports for the first time.
+- Before changing SSH settings, confirm that console, VNC, or rescue access is available, and allow the new port in your provider's firewall. `BOOTSTRAP_KEEP_OLD_SSH_PORT=true` retains only the old port's UFW rule; it does not keep SSH listening on the old port.
 - SSH configuration is checked with `sshd -t` after writing; the backup is restored if validation fails.
 - Step 11 also sets UFW's `IPV6=no` and reloads UFW when disabling IPv6, preventing further `(v6)` rules.
 - Terminal colors written by step 08 apply automatically to new shells. To apply them in the current shell, run `source /etc/profile.d/99-bootstrap.sh`.
