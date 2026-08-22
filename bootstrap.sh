@@ -1715,7 +1715,7 @@ step_06_ufw() {
 
 step_07_ssh_keys() {
     local key_file="$HOME/.ssh/authorized_keys"
-    local tmp line added=0
+    local tmp line last_char added=0
     if ! confirm "$(msg "Add SSH public keys to $key_file" "添加 SSH 公钥到 $key_file")"; then
         skip_step "$(msg "Skipping step 07" "跳过步骤 07")"
         return 0
@@ -1759,6 +1759,19 @@ step_07_ssh_keys() {
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" ]] && continue
         if ! grep -qxF "$line" "$key_file"; then
+            if [[ "$added" -eq 0 ]]; then
+                last_char="$(tail -c 1 "$key_file")" || {
+                    rm -f "$tmp"
+                    return 1
+                }
+                # Command substitution removes a trailing newline; other bytes remain.
+                if [[ -n "$last_char" ]]; then
+                    printf '\n' >>"$key_file" || {
+                        rm -f "$tmp"
+                        return 1
+                    }
+                fi
+            fi
             printf "%s\n" "$line" >>"$key_file" || {
                 rm -f "$tmp"
                 return 1

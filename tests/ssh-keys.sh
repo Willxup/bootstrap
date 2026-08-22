@@ -28,4 +28,25 @@ for newline in present absent; do
     grep -Fq 'added 0 lines' "$tmp_dir/output"
 done
 
+# Existing target records must remain separate, with or without a comment/newline.
+for existing in 'ssh-ed25519 AAAA' "$first"; do
+    for newline in present absent; do
+        printf '%s' "$existing" >"$tmp_dir/ssh/authorized_keys"
+        [[ "$newline" == absent ]] || printf '\n' >>"$tmp_dir/ssh/authorized_keys"
+
+        # Importing only an existing key must leave the target byte-for-byte intact.
+        cp "$tmp_dir/ssh/authorized_keys" "$tmp_dir/unchanged"
+        printf '%s' "$existing" >"$BOOTSTRAP_SSH_PUBLIC_KEY_FILE"
+        step_07_ssh_keys >"$tmp_dir/output" 2>&1
+        cmp "$tmp_dir/unchanged" "$tmp_dir/ssh/authorized_keys"
+        grep -Fq 'added 0 lines' "$tmp_dir/output"
+
+        printf '%s\n%s' "$existing" "$second" >"$BOOTSTRAP_SSH_PUBLIC_KEY_FILE"
+        printf '%s\n%s\n' "$existing" "$second" >"$tmp_dir/expected"
+        step_07_ssh_keys >"$tmp_dir/output" 2>&1
+        cmp "$tmp_dir/expected" "$tmp_dir/ssh/authorized_keys"
+        grep -Fq 'added 1 lines' "$tmp_dir/output"
+    done
+done
+
 echo 'SSH public-key import tests passed'
