@@ -54,8 +54,8 @@ Git ignores `bootstrap.conf`. The example contains public placeholders only; kee
 The script stops immediately when a step fails. Completed steps are skipped when resuming:
 
 ```bash
-sudo ./bootstrap.sh --status
-sudo ./bootstrap.sh --config bootstrap.conf --yes --resume
+sudo bash bootstrap.sh --status
+sudo bash bootstrap.sh --config bootstrap.conf --yes --resume
 ```
 
 The default checkpoint is `/var/lib/bootstrap/state`, and full command output is saved to `/var/log/bootstrap/bootstrap.log`. You can correct the configuration before resuming: new values affect only failed and pending steps, while completed steps are skipped. Use `--reset-state` to discard the previous progress and start a new run.
@@ -65,15 +65,15 @@ Checkpoints from v3.0.x are automatically migrated to the current step numbering
 ## Common commands
 
 ```bash
-./bootstrap.sh --list-steps
-sudo ./bootstrap.sh --only 05,06
-sudo ./bootstrap.sh --skip 11,17
-sudo ./bootstrap.sh --hostname server-02 --ssh-port 2222 --only 04,05,06
-sudo ./bootstrap.sh --network-profile standard --only 10
-sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
+bash bootstrap.sh --list-steps
+sudo bash bootstrap.sh --only 05,06
+sudo bash bootstrap.sh --skip 11,17
+sudo bash bootstrap.sh --hostname server-02 --ssh-port 2222 --only 04,05,06
+sudo bash bootstrap.sh --network-profile standard --only 10
+sudo bash bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 ```
 
-Command-line values override the configuration file. See `./bootstrap.sh --help` for all options and [`bootstrap.conf.example`](bootstrap.conf.example) for configuration settings.
+Command-line values override the configuration file. See `bash bootstrap.sh --help` for all options and [`bootstrap.conf.example`](bootstrap.conf.example) for configuration settings.
 
 Step numbers accept one or two digits (`5` or `05`); longer forms such as `005` are rejected.
 

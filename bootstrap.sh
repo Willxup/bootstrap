@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Server bootstrap
-# Usage: sudo ./bootstrap.sh [--config FILE] [--yes] [--resume]
+# Usage: sudo bash bootstrap.sh [--config FILE] [--yes] [--resume]
 # =============================================================================
 
 set -Euo pipefail
@@ -108,7 +108,7 @@ select_language() {
 usage() {
     if [[ "$UI_LANG" == "en" ]]; then
         cat <<'EOF'
-Usage: sudo ./bootstrap.sh [OPTIONS]
+Usage: sudo bash bootstrap.sh [OPTIONS]
 
 Options:
   --lang en|zh              Output language (default: en; overrides BOOTSTRAP_LANG)
@@ -134,7 +134,7 @@ Options:
 EOF
     else
         cat <<'EOF'
-用法: sudo ./bootstrap.sh [选项]
+用法: sudo bash bootstrap.sh [选项]
 
 选项:
   --lang en|zh              输出语言（默认 en；覆盖 BOOTSTRAP_LANG 环境变量）

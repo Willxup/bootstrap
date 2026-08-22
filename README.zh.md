@@ -54,8 +54,8 @@ sudo bash bootstrap.sh --config bootstrap.conf --yes
 脚本在步骤失败时立即停止，成功步骤不会重复执行：
 
 ```bash
-sudo ./bootstrap.sh --status
-sudo ./bootstrap.sh --config bootstrap.conf --yes --resume
+sudo bash bootstrap.sh --status
+sudo bash bootstrap.sh --config bootstrap.conf --yes --resume
 ```
 
 检查点默认位于 `/var/lib/bootstrap/state`，完整命令输出位于 `/var/log/bootstrap/bootstrap.log`。续跑时可以修正配置；新值只影响失败和待执行步骤，已经完成的步骤不会重跑。确实要放弃旧进度时使用 `--reset-state`。
@@ -65,15 +65,15 @@ v3.0.x 检查点会自动迁移到当前步骤编号；NodeQuality 现在是完�
 ## 常用命令
 
 ```bash
-./bootstrap.sh --list-steps
-sudo ./bootstrap.sh --only 05,06
-sudo ./bootstrap.sh --skip 11,17
-sudo ./bootstrap.sh --hostname server-02 --ssh-port 2222 --only 04,05,06
-sudo ./bootstrap.sh --network-profile standard --only 10
-sudo ./bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
+bash bootstrap.sh --list-steps
+sudo bash bootstrap.sh --only 05,06
+sudo bash bootstrap.sh --skip 11,17
+sudo bash bootstrap.sh --hostname server-02 --ssh-port 2222 --only 04,05,06
+sudo bash bootstrap.sh --network-profile standard --only 10
+sudo bash bootstrap.sh --swap-size 4G --zram-percent 20 --only 12
 ```
 
-命令行值覆盖配置文件。完整参数见 `./bootstrap.sh --help`，全部配置项见 [`bootstrap.conf.example`](bootstrap.conf.example)。
+命令行值覆盖配置文件。完整参数见 `bash bootstrap.sh --help`，全部配置项见 [`bootstrap.conf.example`](bootstrap.conf.example)。
 
 步骤编号支持一位或两位数字（如 `5`、`05`），不接受 `005` 这类更长的写法。
 
