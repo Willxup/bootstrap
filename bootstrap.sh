@@ -1841,7 +1841,7 @@ step_09_nezha() {
         skip_step "$(msg "Skipping step 09" "跳过步骤 09")"
         return 0
     fi
-    apt_install curl || return 1
+    apt_install curl unzip || return 1
     if [[ "$DRY_RUN" -eq 1 ]]; then
         tmp="/tmp/bootstrap-nezha-agent.XXXXXX"
         download_file "$BOOTSTRAP_NEZHA_INSTALLER_URL" "$tmp" || return 1
