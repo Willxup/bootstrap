@@ -817,6 +817,7 @@ installed_external_time_sync_packages() {
 ensure_dir() {
     local dir="$1"
     local mode="${2:-0755}"
+    [[ -d "$dir" ]] && return 0
     if [[ "$DRY_RUN" -eq 1 ]]; then
         info "[dry-run] install -d -m $mode $dir"
         return 0

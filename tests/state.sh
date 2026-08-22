@@ -173,4 +173,30 @@ done
 grep -Fq 'Step 02 completed' "$tmp_dir/skips-en.out"
 grep -Fq '步骤 02 完成' "$tmp_dir/skips-zh.out"
 
+# Custom state/log paths must preserve existing private or shared directory modes.
+file_mode() {
+    local raw_mode
+    if stat -c '%a' "$1" 2>/dev/null; then
+        return 0
+    fi
+    raw_mode="$(stat -f '%p' "$1")" || return 1
+    printf '%o\n' "$((8#$raw_mode & 07777))"
+}
+for mode in 700 1777; do
+    parent_dir="$tmp_dir/parent-$mode"
+    mkdir "$parent_dir"
+    chmod "$mode" "$parent_dir"
+    (
+        STATE_FILE="$parent_dir/state"
+        LOG_FILE="$parent_dir/bootstrap.log"
+        initialize_state
+        setup_log
+    )
+    [[ "$(file_mode "$parent_dir")" == "$mode" ]]
+    [[ "$(file_mode "$parent_dir/state")" == 600 ]]
+    [[ "$(file_mode "$parent_dir/bootstrap.log")" == 600 ]]
+done
+ensure_dir "$tmp_dir/new-parent/child" 0700
+[[ "$(file_mode "$tmp_dir/new-parent/child")" == 700 ]]
+
 echo "state tests passed"
