@@ -14,6 +14,7 @@ for test_file in \
     tests/memory.sh \
     tests/input.sh \
     tests/download.sh \
+    tests/nodequality.sh \
     tests/docker-config.sh; do
     echo "==> $test_file"
     bash "$test_file"

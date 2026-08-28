@@ -62,6 +62,8 @@ The default checkpoint is `/var/lib/bootstrap/state`, and full command output is
 
 Checkpoints from v3.0.x are automatically migrated to the current step numbering. NodeQuality now runs last, as step 17, after all configuration steps.
 
+NodeQuality is an optional external test. Bootstrap displays its output and reports when it ends, without interpreting its results or treating its exit code as an initialization failure. Once it ends, resuming does not run it again; use `sudo bash bootstrap.sh --only 17` to run it separately. Download or launch errors are reported, and interrupting bootstrap still stops the run.
+
 ## Common commands
 
 ```bash

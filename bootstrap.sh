@@ -1328,6 +1328,9 @@ run_step() {
         }
         if [[ "$STEP_SKIPPED" -eq 1 ]]; then
             log_event "STEP $step_num SKIP $step_name"
+        elif [[ "$step_num" == "17" ]]; then
+            log_event "STEP $step_num END $step_name"
+            info "$(msg "NodeQuality has ended" "NodeQuality 已结束")"
         else
             log_event "STEP $step_num OK $step_name"
             success "$(msg "Step ${step_num} completed" "步骤 ${step_num} 完成")"
@@ -2010,7 +2013,7 @@ IPV6_EOF
 }
 
 step_17_nodequality() {
-    local tmp ret
+    local tmp
     if ! confirm "$(msg "Run the NodeQuality latency test (downloads the official test script)" "运行 NodeQuality 延迟测试（会下载官方测试脚本）")"; then
         skip_step "$(msg "Skipping step 17" "跳过步骤 17")"
         return 0
@@ -2027,10 +2030,12 @@ step_17_nodequality() {
         rm -f "$tmp"
         return 1
     }
-    run_interactive_cmd "$(msg "Run the NodeQuality test" "运行 NodeQuality 测试")" bash "$tmp"
-    ret=$?
+    info "$(msg "Run the NodeQuality test" "运行 NodeQuality 测试")..."
+    log_event "RUN interactive NodeQuality"
+    # The optional external test owns its results; its exit code does not fail bootstrap.
+    bash "$tmp" || true
     rm -f "$tmp"
-    return "$ret"
+    return 0
 }
 
 swap_size_to_mb() {

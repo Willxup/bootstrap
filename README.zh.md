@@ -62,6 +62,8 @@ sudo bash bootstrap.sh --config bootstrap.conf --yes --resume
 
 v3.0.x 检查点会自动迁移到当前步骤编号；NodeQuality 现在是完成全部配置后的最后一步 17。
 
+NodeQuality 是可选的外部测试。初始化脚本直接展示其输出，结束后只提示“已结束”，不判断测试结果，也不因其退出码将初始化判为失败。结束后续跑不会重复执行；需要单独重测时使用 `sudo bash bootstrap.sh --only 17`。下载或启动错误会显示，主动中断初始化脚本仍会停止运行。
+
 ## 常用命令
 
 ```bash
