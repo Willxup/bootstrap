@@ -41,6 +41,7 @@ COMPLETED_STEPS=""
 CURRENT_STEP=""
 FAILED_STEP=""
 STEP_SKIPPED=0
+APPLIED_SSH_PORT=""
 
 CLI_HOSTNAME=""
 CLI_TIMEZONE=""
@@ -1600,7 +1601,7 @@ step_05_ssh_port() {
         info "[dry-run] sshd -t -f /etc/ssh/sshd_config"
         info "$(msg "[dry-run] If UFW is active, allow $ssh_port/tcp first" "[dry-run] 如果 UFW 已启用，先放行 $ssh_port/tcp")"
         restart_ssh "$service" "$socket_active" || return 1
-        BOOTSTRAP_SSH_PORT="$ssh_port"
+        APPLIED_SSH_PORT="$ssh_port"
         return 0
     fi
 
@@ -1667,29 +1668,40 @@ step_05_ssh_port() {
         "$sshd_bin" -t -f /etc/ssh/sshd_config >/dev/null 2>&1 && restart_ssh "$service" "$socket_active" >/dev/null 2>&1 || true
         return 1
     fi
-    BOOTSTRAP_SSH_PORT="$ssh_port"
+    APPLIED_SSH_PORT="$ssh_port"
     success "$(msg "The SSH port is now ${ssh_port}. Ensure this port is allowed before enabling the firewall." "SSH 端口已设置为 ${ssh_port}。启用防火墙前请确认该端口已放行。")"
 }
 
 step_06_ufw() {
-    local ufw_ssh_port configured_port default_port="$BOOTSTRAP_SSH_PORT"
-    # A resumed run may skip step 05; recover its applied port from the managed file.
-    if [[ "$RESUME" -eq 1 ]] && contains_step "$COMPLETED_STEPS" "05" && \
-        [[ -r /etc/ssh/sshd_config.d/00-bootstrap-port.conf ]]; then
-        configured_port="$(awk '$1 == "Port" { print $2; exit }' /etc/ssh/sshd_config.d/00-bootstrap-port.conf)" || return 1
-        if validate_port "$configured_port"; then
-            default_port="$configured_port"
+    local ufw_ssh_ports="$APPLIED_SSH_PORT" ufw_ssh_port sshd_bin ports_label="" old_port_included=0
+    if [[ -z "$ufw_ssh_ports" ]]; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            info "$(msg "[dry-run] Read current SSH ports with sshd -T, then confirm enabling UFW and allowing those ports, 80/tcp, and 443/tcp" "[dry-run] 使用 sshd -T 读取当前 SSH 端口，再确认启用 UFW 并放行这些端口、80/tcp、443/tcp")"
+            return 0
+        fi
+        sshd_bin="$(command -v sshd || true)"
+        [[ -z "$sshd_bin" && -x /usr/sbin/sshd ]] && sshd_bin="/usr/sbin/sshd"
+        if [[ -z "$sshd_bin" ]]; then
+            error "$(msg "sshd was not found; cannot read SSH ports for UFW" "未找到 sshd，无法读取 UFW 需要放行的 SSH 端口")"
+            return 1
+        fi
+        ufw_ssh_ports="$("$sshd_bin" -T | awk '$1 == "port" { printf "%s ", $2 }')" || {
+            error "$(msg "Cannot read the current SSH configuration; UFW has not been enabled" "无法读取当前 SSH 配置，未启用 UFW")"
+            return 1
+        }
+        if [[ -z "$ufw_ssh_ports" ]]; then
+            error "$(msg "No SSH port was found; UFW has not been enabled" "未读取到 SSH 端口，未启用 UFW")"
+            return 1
         fi
     fi
-    ufw_ssh_port="$(prompt_input "$(msg "SSH port to allow through the firewall (leave empty to skip)" "防火墙允许的 SSH 端口（留空跳过）")" "$default_port")" || return 1
-    if [[ -z "$ufw_ssh_port" ]]; then
-        skip_step "$(msg "No SSH port provided; skipping step 06" "未输入 SSH 端口，跳过步骤 06")"
-        return 0
-    fi
-    if ! validate_port "$ufw_ssh_port"; then
-        error "$(msg "Invalid firewall SSH port: $ufw_ssh_port" "防火墙 SSH 端口不合法: $ufw_ssh_port")"
-        return 1
-    fi
+    for ufw_ssh_port in $ufw_ssh_ports; do
+        if ! validate_port "$ufw_ssh_port"; then
+            error "$(msg "Invalid firewall SSH port: $ufw_ssh_port" "防火墙 SSH 端口不合法: $ufw_ssh_port")"
+            return 1
+        fi
+        ports_label="${ports_label:+$ports_label, }$ufw_ssh_port/tcp"
+        [[ "$ufw_ssh_port" != "$BOOTSTRAP_OLD_SSH_PORT" ]] || old_port_included=1
+    done
     if ! validate_bool "$BOOTSTRAP_KEEP_OLD_SSH_PORT"; then
         error "$(msg "BOOTSTRAP_KEEP_OLD_SSH_PORT must be true or false" "BOOTSTRAP_KEEP_OLD_SSH_PORT 只能是 true 或 false")"
         return 1
@@ -1698,20 +1710,22 @@ step_06_ufw() {
         error "$(msg "Invalid BOOTSTRAP_OLD_SSH_PORT: $BOOTSTRAP_OLD_SSH_PORT" "BOOTSTRAP_OLD_SSH_PORT 不合法: $BOOTSTRAP_OLD_SSH_PORT")"
         return 1
     fi
-    if ! confirm "$(msg "Install and enable UFW; allow $ufw_ssh_port/tcp, 80/tcp, and 443/tcp" "安装并启用 UFW，开放 $ufw_ssh_port/tcp、80/tcp、443/tcp")"; then
+    if ! confirm "$(msg "Install and enable UFW; allow ${ports_label}, 80/tcp, and 443/tcp" "安装并启用 UFW，开放 ${ports_label}、80/tcp、443/tcp")"; then
         skip_step "$(msg "Skipping step 06" "跳过步骤 06")"
         return 0
     fi
     apt_install ufw || return 1
-    run_cmd "$(msg "Allow SSH port $ufw_ssh_port/tcp" "开放 SSH 端口 $ufw_ssh_port/tcp")" ufw allow "$ufw_ssh_port/tcp" || return 1
-    if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
+    for ufw_ssh_port in $ufw_ssh_ports; do
+        run_cmd "$(msg "Allow SSH port $ufw_ssh_port/tcp" "开放 SSH 端口 $ufw_ssh_port/tcp")" ufw allow "$ufw_ssh_port/tcp" || return 1
+    done
+    if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && "$old_port_included" -eq 0 ]]; then
         run_cmd "$(msg "Keep the UFW rule for the old SSH port $BOOTSTRAP_OLD_SSH_PORT/tcp" "保留旧 SSH 端口 $BOOTSTRAP_OLD_SSH_PORT/tcp 的 UFW 规则")" ufw allow "$BOOTSTRAP_OLD_SSH_PORT/tcp" || return 1
     fi
     run_cmd "$(msg "Allow HTTP port 80/tcp" "开放 HTTP 端口 80/tcp")" ufw allow 80/tcp || return 1
     run_cmd "$(msg "Allow HTTPS port 443/tcp" "开放 HTTPS 端口 443/tcp")" ufw allow 443/tcp || return 1
     run_cmd "$(msg "Enable UFW" "启用 UFW")" ufw --force enable || return 1
     run_cmd "$(msg "Show UFW status" "显示 UFW 状态")" ufw status verbose || return 1
-    if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && -n "$BOOTSTRAP_OLD_SSH_PORT" && "$BOOTSTRAP_OLD_SSH_PORT" != "$ufw_ssh_port" ]]; then
+    if [[ "$BOOTSTRAP_KEEP_OLD_SSH_PORT" == "true" && "$old_port_included" -eq 0 ]]; then
         warn "$(msg "Only the old port's UFW rule was retained; this does not keep SSH listening there. After verifying login on the new port, run manually: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp" "仅保留了旧端口的 UFW 规则，不会让 SSH 继续监听旧端口。确认新端口能登录后，可手动执行: ufw delete allow ${BOOTSTRAP_OLD_SSH_PORT}/tcp")"
     fi
 }

@@ -92,6 +92,7 @@ Swap/ZRam 的大小、百分比、优先级和 swappiness 都可在配置文件�
 - 如果已有 `/etc/docker/daemon.json`，步骤 14 会询问保留（`1`，默认）还是使用脚本默认配置覆盖（`2`）。`--yes` 和 `--dry-run` 会保留已有配置。覆盖前先备份，Docker 重启失败时恢复；选择保留也会跳过脚本为配置安排的重启，但软件包安装或升级仍可能影响服务。
 - 修改 SSH 前先确认控制台/VNC/救援模式可用，并在服务商防火墙中放行新端口。`BOOTSTRAP_KEEP_OLD_SSH_PORT=true` 仅保留旧端口的 UFW 规则，不会让 SSH 继续监听旧端口。
 - SSH 配置写入后会先执行 `sshd -t`，失败会恢复备份。
+- UFW 自动使用本轮已修改的 SSH 端口；没有修改时读取现有 SSH 配置。启用前统一确认放行的 SSH 端口、80/tcp、443/tcp，不再要求输入端口。读取不到 SSH 端口时，会在启用 UFW 前停止。
 - 选择步骤 11 禁用 IPv6 时，会同步设置 UFW `IPV6=no` 并重载，避免继续生成 `(v6)` 规则。
 - 步骤 08 写入的终端颜色仅对新 Shell 自动生效；当前终端可执行 `source /etc/profile.d/99-bootstrap.sh`。
 - 关键配置备份到 `/var/backups/bootstrap/`；脚本不会把配置文件内容或密钥写进检查点。

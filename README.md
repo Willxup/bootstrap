@@ -92,6 +92,7 @@ Swap/ZRam sizes, percentages, priorities, and swappiness can be changed in the c
 - If `/etc/docker/daemon.json` already exists, step 14 asks whether to keep it (`1`, the default) or overwrite it with the script's defaults (`2`). `--yes` and `--dry-run` keep existing configuration. Overwriting creates a backup first; a failed Docker restart restores it. Keeping the file also skips the script's configuration restart, although package installation or upgrades may still affect the service.
 - Before changing SSH settings, confirm that console, VNC, or rescue access is available, and allow the new port in your provider's firewall. `BOOTSTRAP_KEEP_OLD_SSH_PORT=true` retains only the old port's UFW rule; it does not keep SSH listening on the old port.
 - SSH configuration is checked with `sshd -t` after writing; the backup is restored if validation fails.
+- UFW automatically uses the SSH port applied in this run, or reads the existing SSH configuration when no change was made. It confirms the SSH ports, 80/tcp, and 443/tcp before enabling the firewall, without asking you to enter a port. If the SSH ports cannot be read, it stops before enabling UFW.
 - Step 11 also sets UFW's `IPV6=no` and reloads UFW when disabling IPv6, preventing further `(v6)` rules.
 - Terminal colors written by step 08 apply automatically to new shells. To apply them in the current shell, run `source /etc/profile.d/99-bootstrap.sh`.
 - Important configuration files are backed up to `/var/backups/bootstrap/`. Configuration contents and secrets are not stored in checkpoints.
